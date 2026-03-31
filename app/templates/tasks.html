@@ -102,6 +102,7 @@
 document.getElementById("nav-tasks").classList.add("active");
 
 const DAYS = ["mon","tue","wed","thu","fri","sat","sun"];
+let tasksCache = [];
 
 async function loadTasks() {
   let res, tasks;
@@ -113,6 +114,7 @@ async function loadTasks() {
       `<tr><td colspan="6" style="color:var(--danger);text-align:center;padding:2rem">Failed to load tasks: ${e.message}</td></tr>`;
     return;
   }
+  tasksCache = tasks;
   const tbody = document.getElementById("tasks-body");
   if (!tasks.length) {
     tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-muted);text-align:center;padding:2rem">No tasks yet</td></tr>';
@@ -133,7 +135,7 @@ async function loadTasks() {
       <td>
         <div class="task-actions">
           <button class="btn-sm btn-sm-primary" onclick="runTask('${t.id}')">▶ Run</button>
-          <button class="btn-sm btn-sm-ghost"   onclick="editTask(${JSON.stringify(t).replace(/'/g, \"&apos;\")})">Edit</button>
+          <button class="btn-sm btn-sm-ghost" onclick="editTask('${t.id}')">Edit</button>
           <button class="btn-sm btn-sm-danger"  onclick="deleteTask('${t.id}')">Delete</button>
         </div>
       </td>
@@ -178,8 +180,9 @@ window.openTaskModal = () => {
 
 window.closeTaskModal = () => document.getElementById("task-modal").classList.remove("open");
 
-window.editTask = (jsonStr) => {
-  const t = JSON.parse(jsonStr);
+window.editTask = (taskId) => {
+  const t = tasksCache.find(x => x.id === taskId);
+  if (!t) return;
   document.getElementById("task-id").value = t.id;
   document.getElementById("task-modal-title").textContent = "Edit task";
   document.getElementById("task-name").value = t.name;
