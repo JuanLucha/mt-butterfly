@@ -133,7 +133,7 @@ async function loadTasks() {
       <td>
         <div class="task-actions">
           <button class="btn-sm btn-sm-primary" onclick="runTask('${t.id}')">▶ Run</button>
-          <button class="btn-sm btn-sm-ghost"   onclick="editTask(${JSON.stringify(JSON.stringify(t))})">Edit</button>
+          <button class="btn-sm btn-sm-ghost"   onclick="editTask(${JSON.stringify(t).replace(/'/g, \"&apos;\")})">Edit</button>
           <button class="btn-sm btn-sm-danger"  onclick="deleteTask('${t.id}')">Delete</button>
         </div>
       </td>
