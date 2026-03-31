@@ -16,7 +16,7 @@ Web service for chatting with OpenCode via web interface, managing multiple chat
 ### Installation
 
 ```bash
-uv tool install git+https://github.com/lucha/mt-butterfly
+uv tool install git+https://github.com/JuanLucha/mt-butterfly
 ```
 
 ### First Run
