@@ -4,6 +4,7 @@ Web service for chatting with OpenCode via web interface, managing multiple chat
 
 ## Features
 
+- **Setup Wizard**: Interactive first-run configuration
 - **Chat Interface**: Real-time WebSocket-based chat with OpenCode
 - **Multiple Channels**: Each channel maintains its own OpenCode session/context
 - **Scheduled Tasks**: Configure prompts to run on a schedule and receive results via email
@@ -17,25 +18,23 @@ Web service for chatting with OpenCode via web interface, managing multiple chat
 uv tool install git+https://github.com/lucha/mt-butterfly
 ```
 
-### Configuration
+### First Run
+
+Run `mt-butterfly` — the setup wizard will guide you:
+
+1. Generate or enter your AUTH_TOKEN
+2. Set WORKSPACES_DIR (default: `~/mt-butterfly`)
+3. Optionally configure Gmail for email notifications
+
+The wizard creates the necessary directories automatically.
+
+### Reconfigure
+
+To reconfigure later:
 
 ```bash
-mkdir -p ~/Library/Application\ Support/mt-butterfly
-cat > ~/Library/Application\ Support/mt-butterfly/.env <<EOF
-AUTH_TOKEN=your-secret-token
-GMAIL_USER=you@gmail.com
-GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
-WORKSPACES_DIR=/Users/you/workspaces
-EOF
+mt-butterfly --config
 ```
-
-### Run
-
-```bash
-mt-butterfly
-```
-
-Access at `http://localhost:8000/?t=your-secret-token`
 
 ## Development
 
@@ -46,7 +45,7 @@ uv sync
 # Run tests
 pytest tests/ -v
 
-# Start dev server
+# Start dev server (skip wizard)
 AUTH_TOKEN=dev-token python run.py
 ```
 
