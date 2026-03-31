@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}Tasks — mt-butterfly{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <h1>Scheduled Tasks</h1>
+    <button class="btn btn-primary" onclick="openTaskModal()">＋ New task</button>
+  </div>
+
+  <table id="tasks-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Schedule</th>
+        <th>Email</th>
+        <th>Last run</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="tasks-body">
+      <tr><td colspan="6" style="color:var(--text-muted);text-align:center;padding:2rem">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Task modal -->
+<div class="modal-overlay" id="task-modal">
+  <div class="modal" style="width:480px">
+    <h2 id="task-modal-title">New task</h2>
+
+    <input type="hidden" id="task-id">
+
+    <div>
+      <label>Name</label>
+      <input id="task-name" placeholder="e.g. Daily report" autocomplete="off">
+    </div>
+    <div>
+      <label>Prompt</label>
+      <textarea id="task-prompt" rows="4"
+        style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:6px;
+               color:var(--text);padding:.5rem .75rem;font-size:.875rem;font-family:inherit;
+               resize:vertical;outline:none;"
+        placeholder="Describe what OpenCode should do…"></textarea>
+    </div>
+    <div style="display:flex;gap:.75rem">
+      <div style="flex:1">
+        <label>Hour (0–23)</label>
+        <input id="task-hour" type="number" min="0" max="23" value="9">
+      </div>
+      <div style="flex:1">
+        <label>Minute (0–59)</label>
+        <input id="task-minute" type="number" min="0" max="59" value="0">
+      </div>
+    </div>
+    <div>
+      <label>Days of week</label>
+      <div id="task-days" style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:4px">
+        {% for d in [('mon','Mon'),('tue','Tue'),('wed','Wed'),('thu','Thu'),('fri','Fri'),('sat','Sat'),('sun','Sun')] %}
+        <label style="display:flex;align-items:center;gap:3px;font-size:.8rem;cursor:pointer">
+          <input type="checkbox" value="{{ d[0] }}" class="day-cb" {% if d[0] in ['mon','tue','wed','thu','fri'] %}checked{% endif %}>
+          {{ d[1] }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    <div>
+      <label>Email recipients (comma-separated)</label>
+      <input id="task-email" placeholder="you@example.com">
+    </div>
+    <div>
+      <label>Enabled</label>
+      <input type="checkbox" id="task-enabled" checked style="width:auto;margin-top:4px">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeTaskModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveTask()">Save</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById("nav-tasks").classList.add("active");
+
+const DAYS = ["mon","tue","wed","thu","fri","sat","sun"];
+
+async function loadTasks() {
+  let res, tasks;
+  try {
+    res = await apiFetch("/api/tasks");
+    tasks = await res.json();
+  } catch (e) {
+    document.getElementById("tasks-body").innerHTML =
+      `<tr><td colspan="6" style="color:var(--danger);text-align:center;padding:2rem">Failed to load tasks: ${e.message}</td></tr>`;
+    return;
+  }
+  const tbody = document.getElementById("tasks-body");
+  if (!tasks.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-muted);text-align:center;padding:2rem">No tasks yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = tasks.map(t => {
+    const days = t.days_of_week || "mon-fri";
+    const schedule = `${String(t.hour).padStart(2,"0")}:${String(t.minute).padStart(2,"0")} · ${days}`;
+    const lastRun  = t.last_run ? new Date(t.last_run.started_at).toLocaleString() : "—";
+    const status   = t.last_run ? badgeHtml(t.last_run.status) : '<span class="badge badge-none">—</span>';
+    const enabled  = t.enabled ? '' : ' <span style="color:var(--text-muted);font-size:.75rem">(disabled)</span>';
+    return `<tr>
+      <td>${escHtml(t.name)}${enabled}</td>
+      <td style="font-family:monospace;font-size:.8rem">${escHtml(schedule)}</td>
+      <td style="font-size:.8rem;color:var(--text-muted)">${escHtml(t.email_to || "—")}</td>
+      <td style="font-size:.8rem;color:var(--text-muted)">${lastRun}</td>
+      <td>${status}</td>
+      <td>
+        <div class="task-actions">
+          <button class="btn-sm btn-sm-primary" onclick="runTask('${t.id}')">▶ Run</button>
+          <button class="btn-sm btn-sm-ghost"   onclick="editTask(${JSON.stringify(JSON.stringify(t))})">Edit</button>
+          <button class="btn-sm btn-sm-danger"  onclick="deleteTask('${t.id}')">Delete</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join("");
+}
+
+function badgeHtml(status) {
+  const map = { success: "badge-success", error: "badge-error", running: "badge-running" };
+  return `<span class="badge ${map[status] || 'badge-none'}">${status}</span>`;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+window.openTaskModal = () => {
+  document.getElementById("task-id").value = "";
+  document.getElementById("task-modal-title").textContent = "New task";
+  document.getElementById("task-name").value = "";
+  document.getElementById("task-prompt").value = "";
+  document.getElementById("task-hour").value = 9;
+  document.getElementById("task-minute").value = 0;
+  document.getElementById("task-email").value = "";
+  document.getElementById("task-enabled").checked = true;
+  document.querySelectorAll(".day-cb").forEach(cb => {
+    cb.checked = ["mon","tue","wed","thu","fri"].includes(cb.value);
+  });
+  document.getElementById("task-modal").classList.add("open");
+};
+
+window.closeTaskModal = () => document.getElementById("task-modal").classList.remove("open");
+
+window.editTask = (jsonStr) => {
+  const t = JSON.parse(jsonStr);
+  document.getElementById("task-id").value = t.id;
+  document.getElementById("task-modal-title").textContent = "Edit task";
+  document.getElementById("task-name").value = t.name;
+  document.getElementById("task-prompt").value = t.prompt;
+  document.getElementById("task-hour").value = t.hour;
+  document.getElementById("task-minute").value = t.minute;
+  document.getElementById("task-email").value = t.email_to || "";
+  document.getElementById("task-enabled").checked = t.enabled;
+  const activeDays = (t.days_of_week || "").split(",");
+  document.querySelectorAll(".day-cb").forEach(cb => cb.checked = activeDays.includes(cb.value));
+  document.getElementById("task-modal").classList.add("open");
+};
+
+window.saveTask = async () => {
+  const id = document.getElementById("task-id").value;
+  const days = [...document.querySelectorAll(".day-cb:checked")].map(cb => cb.value).join(",");
+  const body = {
+    name:         document.getElementById("task-name").value.trim(),
+    prompt:       document.getElementById("task-prompt").value.trim(),
+    hour:         parseInt(document.getElementById("task-hour").value),
+    minute:       parseInt(document.getElementById("task-minute").value),
+    days_of_week: days || "mon",
+    email_to:     document.getElementById("task-email").value.trim() || null,
+    enabled:      document.getElementById("task-enabled").checked,
+  };
+  if (!body.name || !body.prompt) { alert("Name and prompt are required."); return; }
+  const method = id ? "PUT" : "POST";
+  const path   = id ? `/api/tasks/${id}` : "/api/tasks";
+  try {
+    await apiFetch(path, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    closeTaskModal();
+    loadTasks();
+  } catch (e) {
+    alert("Error saving task: " + e.message);
+  }
+};
+
+window.deleteTask = async (id) => {
+  if (!confirm("Delete this task?")) return;
+  try {
+    await apiFetch(`/api/tasks/${id}`, { method: "DELETE" });
+    loadTasks();
+  } catch (e) {
+    alert("Error deleting task: " + e.message);
+  }
+};
+
+window.runTask = async (id) => {
+  try {
+    await apiFetch(`/api/tasks/${id}/run`, { method: "POST" });
+    alert("Task triggered. Check back shortly for the result.");
+    setTimeout(loadTasks, 2000);
+  } catch (e) {
+    alert("Error triggering task: " + e.message);
+  }
+};
+
+document.getElementById("task-modal").addEventListener("click", e => {
+  if (e.target === document.getElementById("task-modal")) closeTaskModal();
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeTaskModal(); });
+
+loadTasks();
+</script>
+{% endblock %}

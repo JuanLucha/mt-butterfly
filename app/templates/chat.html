@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Chat — mt-butterfly{% endblock %}
+
+{% block content %}
+<div class="layout">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <span>Channels</span>
+      <button class="btn-icon" title="New channel" onclick="openChannelModal()">＋</button>
+    </div>
+    <div class="channel-list" id="channel-list"></div>
+  </div>
+
+  <!-- No channel selected -->
+  <div class="no-channel" id="no-channel">
+    <div class="big">💬</div>
+    <p>Select or create a channel</p>
+  </div>
+
+  <!-- Chat area (hidden until channel selected) -->
+  <div class="chat-area" id="chat-area" style="display:none">
+    <div class="chat-header">
+      <span class="ch-status" id="status-dot"></span>
+      <span id="chat-header-name">—</span>
+    </div>
+    <div class="messages" id="messages"></div>
+    <div class="input-area">
+      <textarea id="msg-input" placeholder="Message… (Enter to send, Shift+Enter for newline)" rows="1" disabled></textarea>
+      <button class="btn-send" id="send-btn" disabled>➤</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- New channel modal -->
+<div class="modal-overlay" id="channel-modal">
+  <div class="modal">
+    <h2>New channel</h2>
+    <div>
+      <label for="modal-channel-name">Name</label>
+      <input id="modal-channel-name" placeholder="e.g. my-project" autocomplete="off"
+             onkeydown="if(event.key==='Enter') createChannel()">
+    </div>
+    <div>
+      <label for="modal-working-dir">Working directory (optional)</label>
+      <input id="modal-working-dir" placeholder="/path/to/project">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeChannelModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="createChannel()">Create</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // Highlight active nav link
+  document.getElementById("nav-chat").classList.add("active");
+</script>
+{% endblock %}
