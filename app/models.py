@@ -48,7 +48,7 @@ class Task(Base):
     hour: Mapped[int] = mapped_column(Integer, nullable=False)
     minute: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     days_of_week: Mapped[str] = mapped_column(String(255), nullable=False, default="mon,tue,wed,thu,fri")
-    working_dir: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    working_dir: Mapped[str] = mapped_column(String(512), nullable=False)
     email_to: Mapped[str | None] = mapped_column(String(512), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)

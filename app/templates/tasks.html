@@ -70,6 +70,10 @@
       <input id="task-email" placeholder="you@example.com">
     </div>
     <div>
+      <label>Working directory (required)</label>
+      <input id="task-working-dir" placeholder="/path/to/workspace" autocomplete="off">
+    </div>
+    <div>
       <label>Enabled</label>
       <input type="checkbox" id="task-enabled" checked style="width:auto;margin-top:4px">
     </div>
@@ -171,6 +175,7 @@ window.openTaskModal = () => {
   document.getElementById("task-hour").value = 9;
   document.getElementById("task-minute").value = 0;
   document.getElementById("task-email").value = "";
+  document.getElementById("task-working-dir").value = "";
   document.getElementById("task-enabled").checked = true;
   document.querySelectorAll(".day-cb").forEach(cb => {
     cb.checked = ["mon","tue","wed","thu","fri"].includes(cb.value);
@@ -190,6 +195,7 @@ window.editTask = (taskId) => {
   document.getElementById("task-hour").value = t.hour;
   document.getElementById("task-minute").value = t.minute;
   document.getElementById("task-email").value = t.email_to || "";
+  document.getElementById("task-working-dir").value = t.working_dir || "";
   document.getElementById("task-enabled").checked = t.enabled;
   const activeDays = (t.days_of_week || "").split(",");
   document.querySelectorAll(".day-cb").forEach(cb => cb.checked = activeDays.includes(cb.value));
@@ -205,10 +211,11 @@ window.saveTask = async () => {
     hour:         parseInt(document.getElementById("task-hour").value),
     minute:       parseInt(document.getElementById("task-minute").value),
     days_of_week: days || "mon",
+    working_dir:  document.getElementById("task-working-dir").value.trim(),
     email_to:     document.getElementById("task-email").value.trim() || null,
     enabled:      document.getElementById("task-enabled").checked,
   };
-  if (!body.name || !body.prompt) { alert("Name and prompt are required."); return; }
+  if (!body.name || !body.prompt || !body.working_dir) { alert("Name, prompt, and working directory are required."); return; }
   const method = id ? "PUT" : "POST";
   const path   = id ? `/api/tasks/${id}` : "/api/tasks";
   try {

@@ -32,6 +32,7 @@ class TaskCreate(BaseModel):
     hour: int
     minute: int = 0
     days_of_week: str = "mon,tue,wed,thu,fri"
+    working_dir: str
     email_to: str | None = None
     enabled: bool = True
 
@@ -71,6 +72,7 @@ async def _task_with_last_run(task: Task, db: AsyncSession) -> dict:
         "hour": task.hour,
         "minute": task.minute,
         "days_of_week": task.days_of_week,
+        "working_dir": task.working_dir,
         "email_to": task.email_to,
         "enabled": task.enabled,
         "created_at": task.created_at,
@@ -84,15 +86,9 @@ async def _task_with_last_run(task: Task, db: AsyncSession) -> dict:
 
 
 def _ensure_workspace(task: Task) -> None:
-    """Create workspace dir for task if WORKSPACES_DIR is set."""
-    from app.config import settings
-    import re
-    if not settings.workspaces_dir:
-        return
-    slug = re.sub(r"[^\w-]", "-", task.name.lower()).strip("-") or task.id
-    workspace = Path(settings.workspaces_dir) / slug
+    """Create workspace dir for task."""
+    workspace = Path(task.working_dir)
     workspace.mkdir(parents=True, exist_ok=True)
-    task.working_dir = str(workspace)
 
 
 # ── REST ──────────────────────────────────────────────────────────────────────

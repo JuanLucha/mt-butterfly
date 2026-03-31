@@ -18,7 +18,8 @@ async def test_list_tasks_empty(client):
 async def test_create_task(client):
     with patch("app.routers.tasks.schedule_task"):
         resp = await client.post("/api/tasks", params=T, json={
-            "name": "Daily report", "prompt": "Summarize the project", "hour": 9
+            "name": "Daily report", "prompt": "Summarize the project", "hour": 9,
+            "working_dir": "/tmp/test-workspace"
         })
     assert resp.status_code == 201
     data = resp.json()
@@ -32,7 +33,7 @@ async def test_create_task(client):
 @pytest.mark.asyncio
 async def test_create_task_validates_hour(client):
     resp = await client.post("/api/tasks", params=T, json={
-        "name": "bad", "prompt": "x", "hour": 25
+        "name": "bad", "prompt": "x", "hour": 25, "working_dir": "/tmp/test"
     })
     assert resp.status_code == 422
 
@@ -40,7 +41,7 @@ async def test_create_task_validates_hour(client):
 @pytest.mark.asyncio
 async def test_create_task_validates_minute(client):
     resp = await client.post("/api/tasks", params=T, json={
-        "name": "bad", "prompt": "x", "hour": 9, "minute": 60
+        "name": "bad", "prompt": "x", "hour": 9, "minute": 60, "working_dir": "/tmp/test"
     })
     assert resp.status_code == 422
 
@@ -49,13 +50,13 @@ async def test_create_task_validates_minute(client):
 async def test_update_task(client):
     with patch("app.routers.tasks.schedule_task"), patch("app.routers.tasks.unschedule_task"):
         create = await client.post("/api/tasks", params=T, json={
-            "name": "Old name", "prompt": "old prompt", "hour": 8
+            "name": "Old name", "prompt": "old prompt", "hour": 8, "working_dir": "/tmp/test1"
         })
         task_id = create.json()["id"]
 
         resp = await client.put(f"/api/tasks/{task_id}", params=T, json={
             "name": "New name", "prompt": "new prompt", "hour": 10, "minute": 30,
-            "days_of_week": "mon,wed,fri", "enabled": True
+            "days_of_week": "mon,wed,fri", "enabled": True, "working_dir": "/tmp/test2"
         })
     assert resp.status_code == 200
     data = resp.json()
@@ -68,7 +69,7 @@ async def test_update_task(client):
 async def test_update_task_not_found(client):
     with patch("app.routers.tasks.unschedule_task"):
         resp = await client.put("/api/tasks/nonexistent", params=T, json={
-            "name": "x", "prompt": "y", "hour": 9
+            "name": "x", "prompt": "y", "hour": 9, "working_dir": "/tmp/test"
         })
     assert resp.status_code == 404
 
@@ -77,7 +78,7 @@ async def test_update_task_not_found(client):
 async def test_delete_task(client):
     with patch("app.routers.tasks.schedule_task"), patch("app.routers.tasks.unschedule_task"):
         create = await client.post("/api/tasks", params=T, json={
-            "name": "to delete", "prompt": "x", "hour": 9
+            "name": "to delete", "prompt": "x", "hour": 9, "working_dir": "/tmp/test"
         })
         task_id = create.json()["id"]
         resp = await client.delete(f"/api/tasks/{task_id}", params=T)
@@ -98,7 +99,7 @@ async def test_delete_task_not_found(client):
 async def test_disabled_task_not_scheduled(client):
     with patch("app.routers.tasks.schedule_task") as mock_schedule:
         await client.post("/api/tasks", params=T, json={
-            "name": "disabled", "prompt": "x", "hour": 9, "enabled": False
+            "name": "disabled", "prompt": "x", "hour": 9, "enabled": False, "working_dir": "/tmp/test"
         })
     mock_schedule.assert_not_called()
 
@@ -107,7 +108,7 @@ async def test_disabled_task_not_scheduled(client):
 async def test_run_task_now(client):
     with patch("app.routers.tasks.schedule_task"):
         create = await client.post("/api/tasks", params=T, json={
-            "name": "manual", "prompt": "do it", "hour": 9
+            "name": "manual", "prompt": "do it", "hour": 9, "working_dir": "/tmp/test"
         })
         task_id = create.json()["id"]
 
@@ -145,7 +146,7 @@ async def test_run_task_executes_opencode_and_saves_run():
 
     try:
         async with sf() as db:
-            task = Task(name="test", prompt="hello", hour=9, enabled=True)
+            task = Task(name="test", prompt="hello", hour=9, enabled=True, working_dir="/tmp/test-task")
             db.add(task)
             await db.commit()
             await db.refresh(task)
@@ -187,7 +188,7 @@ async def test_run_task_sends_email_on_completion():
     try:
         async with sf() as db:
             task = Task(name="email-test", prompt="do it", hour=9,
-                        enabled=True, email_to="a@b.com")
+                        enabled=True, email_to="a@b.com", working_dir="/tmp/test-email")
             db.add(task)
             await db.commit()
             await db.refresh(task)

@@ -29,7 +29,8 @@ async def _run_task(task_id: str) -> None:
         await db.refresh(run)
 
         try:
-            output, _ = await run_opencode(task.prompt, working_dir=task.working_dir)
+            constrained_prompt = f"You MUST work only inside the directory: {task.working_dir}\n\n{task.prompt}"
+            output, _ = await run_opencode(constrained_prompt, working_dir=task.working_dir)
             run.status = "success"
         except Exception as e:
             output = str(e)
