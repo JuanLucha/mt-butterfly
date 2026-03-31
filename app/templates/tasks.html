@@ -70,6 +70,10 @@
       <input id="task-email" placeholder="you@example.com">
     </div>
     <div>
+      <label>Working directory</label>
+      <div id="task-working-dir-display" style="font-size:.8rem;color:var(--text-muted);margin-top:2px">Will be: WORKSPACES_DIR/task-name</div>
+    </div>
+    <div>
       <label>Enabled</label>
       <input type="checkbox" id="task-enabled" checked style="width:auto;margin-top:4px">
     </div>
@@ -172,11 +176,27 @@ window.openTaskModal = () => {
   document.getElementById("task-minute").value = 0;
   document.getElementById("task-email").value = "";
   document.getElementById("task-enabled").checked = true;
+  updateWorkingDirDisplay("");
   document.querySelectorAll(".day-cb").forEach(cb => {
     cb.checked = ["mon","tue","wed","thu","fri"].includes(cb.value);
   });
   document.getElementById("task-modal").classList.add("open");
 };
+
+function updateWorkingDirDisplay(name) {
+  const display = document.getElementById("task-working-dir-display");
+  if (!name) {
+    display.textContent = "Will be: WORKSPACES_DIR/task-name";
+    return;
+  }
+  const slug = name.toLowerCase().replace(/[^\w-]+/g, "-").replace(/^-+|-+$/g, "") || "task";
+  display.textContent = `Will be: WORKSPACES_DIR/${slug}`;
+}
+
+document.getElementById("task-name").addEventListener("input", (e) => {
+  if (document.getElementById("task-id").value) return;
+  updateWorkingDirDisplay(e.target.value);
+});
 
 window.closeTaskModal = () => document.getElementById("task-modal").classList.remove("open");
 
