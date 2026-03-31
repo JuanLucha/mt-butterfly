@@ -5,11 +5,13 @@ from fastapi.templating import Jinja2Templates
 from pathlib import Path
 
 from app.database import init_db
+from app.config import settings
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    Path(settings.workspaces_dir).mkdir(parents=True, exist_ok=True)
     from app.services.scheduler import scheduler, load_all_tasks
     await load_all_tasks()
     scheduler.start()

@@ -1,6 +1,6 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from datetime import datetime
+from datetime import datetime, UTC
 
 scheduler = AsyncIOScheduler()
 
@@ -23,7 +23,7 @@ async def _run_task(task_id: str) -> None:
         if not task or not task.enabled:
             return
 
-        run = TaskRun(task_id=task_id, started_at=datetime.utcnow(), status="running")
+        run = TaskRun(task_id=task_id, started_at=datetime.now(UTC), status="running")
         db.add(run)
         await db.commit()
         await db.refresh(run)
@@ -36,7 +36,7 @@ async def _run_task(task_id: str) -> None:
             run.status = "error"
 
         run.output = output
-        run.completed_at = datetime.utcnow()
+        run.completed_at = datetime.now(UTC)
         await db.commit()
 
     # Send email if configured
