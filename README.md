@@ -5,6 +5,7 @@ Web service for chatting with OpenCode via web interface, managing multiple chat
 ## Features
 
 - **Setup Wizard**: Interactive first-run configuration
+- **CLI Options**: Pass config via arguments, no wizard needed
 - **Chat Interface**: Real-time WebSocket-based chat with OpenCode
 - **Multiple Channels**: Each channel maintains its own OpenCode session/context
 - **Scheduled Tasks**: Configure prompts to run on a schedule and receive results via email
@@ -28,13 +29,20 @@ Run `mt-butterfly` — the setup wizard will guide you:
 
 The wizard creates the necessary directories automatically.
 
-### Reconfigure
-
-To reconfigure later:
+### CLI Options
 
 ```bash
-mt-butterfly --config
+mt-butterfly --token YOUR_TOKEN              # Skip wizard, use token
+mt-butterfly -t YOUR_TOKEN -w /path         # Full config via args
+mt-butterfly --config                        # Force wizard to run
+mt-butterfly --clean-setup                   # Remove config file
 ```
+
+All options:
+- `-t, --token` — AUTH_TOKEN (required if no config exists)
+- `-w, --workspaces-dir` — WORKSPACES_DIR
+- `--gmail-user` — GMAIL_USER for email notifications
+- `--gmail-password` — GMAIL_APP_PASSWORD
 
 ## Development
 
