@@ -79,6 +79,22 @@
     </div>
   </div>
 </div>
+
+<!-- Task runs modal -->
+<div class="modal-overlay" id="runs-modal">
+  <div class="modal" style="width:700px;max-height:90vh">
+    <h2 id="runs-modal-title">Task Runs</h2>
+    <input type="hidden" id="runs-task-id">
+    <div id="runs-list" style="max-height:200px;overflow-y:auto;margin-bottom:1rem;border:1px solid var(--border);border-radius:6px"></div>
+    <div id="run-output-container" style="display:none">
+      <label>Output</label>
+      <div id="run-output" style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:1rem;max-height:400px;overflow-y:auto;font-size:.85rem;white-space:pre-wrap"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeRunsModal()">Close</button>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -109,7 +125,7 @@ async function loadTasks() {
     const status   = t.last_run ? badgeHtml(t.last_run.status) : '<span class="badge badge-none">—</span>';
     const enabled  = t.enabled ? '' : ' <span style="color:var(--text-muted);font-size:.75rem">(disabled)</span>';
     return `<tr>
-      <td>${escHtml(t.name)}${enabled}</td>
+      <td style="cursor:pointer;color:var(--primary)" onclick="viewTaskRuns('${t.id}', '${escHtml(t.name)}')">${escHtml(t.name)}${enabled}</td>
       <td style="font-family:monospace;font-size:.8rem">${escHtml(schedule)}</td>
       <td style="font-size:.8rem;color:var(--text-muted)">${escHtml(t.email_to || "—")}</td>
       <td style="font-size:.8rem;color:var(--text-muted)">${lastRun}</td>
@@ -132,6 +148,17 @@ function badgeHtml(status) {
 
 function escHtml(s) {
   return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+function renderMarkdown(text) {
+  if (!text) return "";
+  return text
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/```([\s\S]*?)```/g, "<pre><code>$1</code></pre>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    .replace(/\n/g, "<br>");
 }
 
 window.openTaskModal = () => {
@@ -210,10 +237,60 @@ window.runTask = async (id) => {
   }
 };
 
+window.viewTaskRuns = async (taskId, taskName) => {
+  document.getElementById("runs-task-id").value = taskId;
+  document.getElementById("runs-modal-title").textContent = `Runs — ${taskName}`;
+  document.getElementById("run-output-container").style.display = "none";
+  
+  try {
+    const res = await apiFetch(`/api/tasks/${taskId}/runs`);
+    const runs = await res.json();
+    
+    const listEl = document.getElementById("runs-list");
+    if (!runs.length) {
+      listEl.innerHTML = '<div style="padding:1rem;color:var(--text-muted)">No runs yet</div>';
+      return;
+    }
+    
+    listEl.innerHTML = runs.map(r => {
+      const started = r.started_at ? new Date(r.started_at).toLocaleString() : "—";
+      const completed = r.completed_at ? new Date(r.completed_at).toLocaleString() : "—";
+      const status = badgeHtml(r.status);
+      return `<div class="run-item" style="display:flex;align-items:center;gap:1rem;padding:.5rem 1rem;border-bottom:1px solid var(--border);cursor:pointer" onclick="viewRunOutput('${r.id}')">
+        <span style="flex:1;font-size:.85rem">${started}</span>
+        <span style="flex:1;font-size:.85rem">${completed}</span>
+        <span>${status}</span>
+      </div>`;
+    }).join("");
+  } catch (e) {
+    document.getElementById("runs-list").innerHTML = `<div style="padding:1rem;color:var(--danger)">Error: ${e.message}</div>`;
+  }
+  
+  document.getElementById("runs-modal").classList.add("open");
+};
+
+window.viewRunOutput = async (runId) => {
+  try {
+    const res = await apiFetch(`/api/tasks/runs/${runId}`);
+    const run = await res.json();
+    const outputEl = document.getElementById("run-output");
+    outputEl.innerHTML = renderMarkdown(run.output || "No output");
+    document.getElementById("run-output-container").style.display = "block";
+    outputEl.scrollTop = 0;
+  } catch (e) {
+    alert("Error loading output: " + e.message);
+  }
+};
+
+window.closeRunsModal = () => document.getElementById("runs-modal").classList.remove("open");
+
 document.getElementById("task-modal").addEventListener("click", e => {
   if (e.target === document.getElementById("task-modal")) closeTaskModal();
 });
-document.addEventListener("keydown", e => { if (e.key === "Escape") closeTaskModal(); });
+document.getElementById("runs-modal").addEventListener("click", e => {
+  if (e.target === document.getElementById("runs-modal")) closeRunsModal();
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape") { closeTaskModal(); closeRunsModal(); } });
 
 loadTasks();
 </script>

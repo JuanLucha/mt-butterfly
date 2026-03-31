@@ -154,3 +154,44 @@ async def run_task_now(task_id: str, background_tasks: BackgroundTasks, db: Asyn
     from app.services.scheduler import _run_task
     background_tasks.add_task(_run_task, task_id)
     return {"status": "triggered"}
+
+
+@router.get("/api/tasks/{task_id}/runs")
+async def list_task_runs(task_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Task).where(Task.id == task_id))
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    result = await db.execute(
+        select(TaskRun)
+        .where(TaskRun.task_id == task_id)
+        .order_by(TaskRun.started_at.desc())
+    )
+    runs = result.scalars().all()
+    return [
+        {
+            "id": r.id,
+            "started_at": r.started_at,
+            "completed_at": r.completed_at,
+            "status": r.status,
+            "output": r.output,
+        }
+        for r in runs
+    ]
+
+
+@router.get("/api/tasks/runs/{run_id}")
+async def get_task_run(run_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(TaskRun).where(TaskRun.id == run_id))
+    run = result.scalar_one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return {
+        "id": run.id,
+        "task_id": run.task_id,
+        "started_at": run.started_at,
+        "completed_at": run.completed_at,
+        "status": run.status,
+        "output": run.output,
+    }
