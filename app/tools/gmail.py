@@ -10,14 +10,18 @@ from email.mime.text import MIMEText
 from pathlib import Path
 
 
-def _send_sync(to: list[str], subject: str, body: str) -> None:
+def _send_sync(to: list[str], subject: str, body: str, html: bool = False) -> None:
     from app.config import settings
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = settings.gmail_user
     msg["To"] = ", ".join(to)
-    msg.attach(MIMEText(body, "plain"))
+    if html:
+        msg.attach(MIMEText(body, "plain"))
+        msg.attach(MIMEText(body, "html"))
+    else:
+        msg.attach(MIMEText(body, "plain"))
 
     context = ssl.create_default_context()
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
@@ -25,8 +29,8 @@ def _send_sync(to: list[str], subject: str, body: str) -> None:
         server.send_message(msg)
 
 
-async def send_gmail(to: list[str], subject: str, body: str) -> None:
-    await asyncio.to_thread(_send_sync, to, subject, body)
+async def send_gmail(to: list[str], subject: str, body: str, html: bool = False) -> None:
+    await asyncio.to_thread(_send_sync, to, subject, body, html)
 
 
 def main() -> None:
@@ -37,6 +41,8 @@ def main() -> None:
     parser.add_argument("--body", help="Email body text")
     parser.add_argument("--body-file", metavar="FILE",
                         help="Path to a file whose contents will be used as the body")
+    parser.add_argument("--html", action="store_true",
+                        help="Send body as HTML (renders in email clients)")
     args = parser.parse_args()
 
     if args.body_file:
@@ -47,7 +53,7 @@ def main() -> None:
         print("Reading body from stdin (Ctrl-D to finish):", file=sys.stderr)
         body = sys.stdin.read()
 
-    asyncio.run(send_gmail(to=args.to, subject=args.subject, body=body))
+    asyncio.run(send_gmail(to=args.to, subject=args.subject, body=body, html=args.html))
     print(f"Email sent to {', '.join(args.to)}")
 
 
