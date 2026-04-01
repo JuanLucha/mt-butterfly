@@ -52,7 +52,8 @@ async def _run_task(task_id: str) -> None:
                 f"{email_instruction}"
                 f"  mt-butterfly-gmail --to <address> --subject \"<subject>\" --body \"<body>\"\n\n"
                 f"To download YouTube transcripts:\n"
-                f"  mt-butterfly-youtube <video_url_or_id> [--format json] [--output-dir <dir>] [--print]\n\n"
+                f"  mt-butterfly-youtube <video_url_or_id> [--format json] [--output-dir <dir>] [--print]\n"
+                f"  Do NOT pass --lang. The tool auto-selects the transcript language.\n\n"
                 f"## Task\n\n"
                 f"{task.prompt}"
             )
