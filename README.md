@@ -22,7 +22,7 @@ uv tool install git+https://github.com/JuanLucha/mt-butterfly
 ### Upgrade
 
 ```bash
-uv tool upgrade mt-butterfly
+uv tool install git+https://github.com/JuanLucha/mt-butterfly --force
 ```
 
 ### First Run
