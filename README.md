@@ -19,6 +19,12 @@ Web service for chatting with OpenCode via web interface, managing multiple chat
 uv tool install git+https://github.com/JuanLucha/mt-butterfly
 ```
 
+### Upgrade
+
+```bash
+uv tool upgrade mt-butterfly
+```
+
 ### First Run
 
 Run `mt-butterfly` — the setup wizard will guide you:

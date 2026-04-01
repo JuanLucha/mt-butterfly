@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, Request, HTTPException, BackgroundTasks
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import List
 
 from app.auth import verify_token
 from app.database import get_db
@@ -197,6 +198,55 @@ async def list_task_runs(task_id: str, db: AsyncSession = Depends(get_db)):
         }
         for r in runs
     ]
+
+
+@router.get("/api/tasks/export")
+async def export_tasks(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Task).order_by(Task.created_at))
+    tasks = result.scalars().all()
+    data = [
+        {
+            "name": t.name,
+            "prompt": t.prompt,
+            "hour": t.hour,
+            "minute": t.minute,
+            "days_of_week": t.days_of_week,
+            "email_to": t.email_to,
+            "enabled": t.enabled,
+        }
+        for t in tasks
+    ]
+    return JSONResponse(
+        content={"version": 1, "tasks": data},
+        headers={"Content-Disposition": "attachment; filename=mt-butterfly-tasks.json"},
+    )
+
+
+class TaskImportBody(BaseModel):
+    tasks: List[TaskCreate]
+    replace: bool = False
+
+
+@router.post("/api/tasks/import", status_code=201)
+async def import_tasks(body: TaskImportBody, db: AsyncSession = Depends(get_db)):
+    if body.replace:
+        existing = (await db.execute(select(Task))).scalars().all()
+        for t in existing:
+            unschedule_task(t.id)
+            await db.delete(t)
+        await db.commit()
+
+    created = []
+    for item in body.tasks:
+        task = Task(**item.model_dump())
+        _ensure_workspace(task)
+        db.add(task)
+        await db.commit()
+        await db.refresh(task)
+        if task.enabled:
+            schedule_task(task)
+        created.append({"id": task.id, "name": task.name})
+    return {"imported": len(created), "tasks": created}
 
 
 @router.get("/api/tasks/runs/{run_id}")

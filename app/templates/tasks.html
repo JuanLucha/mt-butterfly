@@ -5,7 +5,11 @@
 <div class="page">
   <div class="page-header">
     <h1>Scheduled Tasks</h1>
-    <button class="btn btn-primary" onclick="openTaskModal()">＋ New task</button>
+    <div style="display:flex;gap:.5rem;align-items:center">
+      <button class="btn btn-ghost" onclick="exportTasks()">↓ Export</button>
+      <label class="btn btn-ghost" style="cursor:pointer;margin:0">↑ Import<input type="file" accept=".json" id="import-file-input" style="display:none" onchange="importTasks(this)"></label>
+      <button class="btn btn-primary" onclick="openTaskModal()">＋ New task</button>
+    </div>
   </div>
 
   <table id="tasks-table">
@@ -419,6 +423,49 @@ document.getElementById("runs-modal").addEventListener("click", e => {
   if (e.target === document.getElementById("runs-modal")) closeRunsModal();
 });
 document.addEventListener("keydown", e => { if (e.key === "Escape") { closeTaskModal(); closeRunsModal(); } });
+
+window.exportTasks = async () => {
+  try {
+    const res = await apiFetch("/api/tasks/export");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "mt-butterfly-tasks.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert("Export failed: " + e.message);
+  }
+};
+
+window.importTasks = async (input) => {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = "";
+  let parsed;
+  try {
+    parsed = JSON.parse(await file.text());
+  } catch {
+    alert("Invalid JSON file.");
+    return;
+  }
+  const tasks = parsed.tasks || (Array.isArray(parsed) ? parsed : null);
+  if (!tasks) { alert("No tasks found in file."); return; }
+  if (!confirm(`Import ${tasks.length} task(s) and add them to existing tasks?`)) return;
+  try {
+    const res = await apiFetch("/api/tasks/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tasks, replace: false }),
+    });
+    const result = await res.json();
+    alert(`Imported ${result.imported} task(s).`);
+    loadTasks();
+  } catch (e) {
+    alert("Import failed: " + e.message);
+  }
+};
 
 loadTasks();
 </script>
