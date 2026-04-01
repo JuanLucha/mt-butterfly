@@ -1,7 +1,10 @@
+import logging
+import asyncio
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from datetime import datetime, UTC
 
+logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
 
 
@@ -17,10 +20,13 @@ async def _run_task(task_id: str) -> None:
     from app.services.email import send_gmail
     from sqlalchemy import select
 
+    logger.info(f"Starting task {task_id}")
+
     async with async_session_factory() as db:
         result = await db.execute(select(Task).where(Task.id == task_id))
         task = result.scalar_one_or_none()
         if not task or not task.enabled:
+            logger.warning(f"Task {task_id} not found or disabled")
             return
 
         run = TaskRun(task_id=task_id, started_at=datetime.now(UTC), status="running")
@@ -30,9 +36,16 @@ async def _run_task(task_id: str) -> None:
 
         try:
             constrained_prompt = f"You MUST work only inside the directory: {task.working_dir}\n\n{task.prompt}"
-            output, _ = await run_opencode(constrained_prompt, working_dir=task.working_dir)
+            logger.info(f"Running opencode in {task.working_dir}")
+            logger.info(f"Prompt: {constrained_prompt[:200]}...")
+            output, _ = await run_opencode(
+                constrained_prompt, working_dir=task.working_dir
+            )
+            logger.info(f"Opencode output length: {len(output)}")
+            logger.info(f"Opencode output: {output[:500] if output else 'EMPTY'}")
             run.status = "success"
         except Exception as e:
+            logger.exception(f"Task {task_id} failed: {e}")
             output = str(e)
             run.status = "error"
 
@@ -57,7 +70,9 @@ def schedule_task(task) -> None:
     job_id = _job_id(task.id)
     if scheduler.get_job(job_id):
         scheduler.remove_job(job_id)
-    scheduler.add_job(_run_task, trigger, args=[task.id], id=job_id, replace_existing=True)
+    scheduler.add_job(
+        _run_task, trigger, args=[task.id], id=job_id, replace_existing=True
+    )
 
 
 def unschedule_task(task_id: str) -> None:

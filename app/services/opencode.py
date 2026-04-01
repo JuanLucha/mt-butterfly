@@ -1,7 +1,10 @@
 import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 async def stream_opencode(
@@ -18,6 +21,9 @@ async def stream_opencode(
     if session_id:
         cmd += ["--session", session_id]
 
+    logger.info(f"Running command: {' '.join(cmd)}")
+    logger.info(f"Working directory: {working_dir}")
+
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
@@ -31,9 +37,11 @@ async def stream_opencode(
         line = raw_line.decode().strip()
         if not line:
             continue
+        logger.debug(f"Raw line: {line[:200]}")
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
+            logger.warning(f"Failed to parse JSON: {line[:100]}")
             continue
 
         # Extract session ID from any event
@@ -52,7 +60,11 @@ async def stream_opencode(
 
     if proc.returncode != 0:
         stderr = await proc.stderr.read()
-        raise RuntimeError(stderr.decode().strip() or f"opencode exited with code {proc.returncode}")
+        err_msg = (
+            stderr.decode().strip() or f"opencode exited with code {proc.returncode}"
+        )
+        logger.error(f"Opencode error: {err_msg}")
+        raise RuntimeError(err_msg)
 
 
 async def run_opencode(
