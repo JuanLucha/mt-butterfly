@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     gmail_user: str = ""
     gmail_app_password: str = ""
     database_url: str = ""
-    opencode_path: str = "/opt/homebrew/bin/opencode"
+    opencode_path: str = "opencode"
 
     model_config = SettingsConfigDict(env_file=_get_env_files(), env_file_encoding="utf-8")
 
