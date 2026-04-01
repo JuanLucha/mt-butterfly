@@ -131,7 +131,7 @@ async def ws_chat(websocket: WebSocket, channel_id: str, t: str = ""):
                 await websocket.send_json({"type": "assistant_start"})
                 response_parts: list[str] = []
                 try:
-                    async for chunk, sid in stream_opencode(
+                    async for chunk, sid, _raw in stream_opencode(
                         user_text,
                         session_id=channel.opencode_session_id,
                         working_dir=channel.working_dir,

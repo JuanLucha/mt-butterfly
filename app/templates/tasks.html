@@ -91,8 +91,8 @@
     <input type="hidden" id="runs-task-id">
     <div id="runs-list" style="max-height:200px;overflow-y:auto;margin-bottom:1rem;border:1px solid var(--border);border-radius:6px"></div>
     <div id="run-output-container" style="display:none">
-      <label>Output</label>
-      <div id="run-output" style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:1rem;max-height:400px;overflow-y:auto;font-size:.85rem;white-space:pre-wrap"></div>
+      <label>Session</label>
+      <div id="run-output" style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:1rem;max-height:400px;overflow-y:auto;font-size:.85rem;display:flex;flex-direction:column;gap:.5rem"></div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeRunsModal()">Close</button>
@@ -250,11 +250,41 @@ window.deleteTask = async (id) => {
   }
 };
 
+let _pollInterval = null;
+let _activeRunId = null;
+
+async function refreshActiveRun() {
+  if (!_activeRunId) return;
+  try {
+    const res = await apiFetch(`/api/tasks/runs/${_activeRunId}`);
+    const run = await res.json();
+    const outputEl = document.getElementById("run-output");
+    if (outputEl && document.getElementById("run-output-container").style.display !== "none") {
+      const scrolledToBottom = outputEl.scrollHeight - outputEl.scrollTop <= outputEl.clientHeight + 40;
+      outputEl.innerHTML = renderSession(run.output);
+      if (scrolledToBottom) outputEl.scrollTop = outputEl.scrollHeight;
+    }
+  } catch {}
+}
+
+function startPolling() {
+  if (_pollInterval) return;
+  _pollInterval = setInterval(async () => {
+    await loadTasks();
+    await refreshActiveRun();
+    const hasRunning = tasksCache.some(t => t.last_run?.status === "running");
+    if (!hasRunning) {
+      clearInterval(_pollInterval);
+      _pollInterval = null;
+    }
+  }, 3000);
+}
+
 window.runTask = async (id) => {
   try {
     await apiFetch(`/api/tasks/${id}/run`, { method: "POST" });
-    alert("Task triggered. Check back shortly for the result.");
-    setTimeout(loadTasks, 2000);
+    await loadTasks();
+    startPolling();
   } catch (e) {
     alert("Error triggering task: " + e.message);
   }
@@ -292,20 +322,95 @@ window.viewTaskRuns = async (taskId, taskName) => {
   document.getElementById("runs-modal").classList.add("open");
 };
 
+function renderSession(jsonl) {
+  if (!jsonl || !jsonl.trim()) return '<div style="color:var(--text-muted);font-style:italic">No output</div>';
+
+  const lines = jsonl.trim().split("\n");
+  const blocks = [];
+
+  for (const line of lines) {
+    let event;
+    try { event = JSON.parse(line); } catch { continue; }
+
+    const type = event.type;
+    const part = event.part || {};
+
+    if (type === "text") {
+      const text = part.text || "";
+      if (!text.trim()) continue;
+      blocks.push(`<div style="background:var(--bg);border-radius:4px;padding:.5rem .75rem;white-space:pre-wrap">${renderMarkdown(text)}</div>`);
+
+    } else if (type === "message") {
+      const role = part.role || "assistant";
+      const content = part.content || "";
+      const text = Array.isArray(content)
+        ? content.filter(c => c.type === "text").map(c => c.text || "").join("")
+        : content;
+      if (!text.trim()) continue;
+      const label = role === "user" ? "User" : "Assistant";
+      const color = role === "user" ? "var(--primary)" : "var(--text-muted)";
+      blocks.push(`<div style="border-left:3px solid ${color};padding:.4rem .75rem">
+        <div style="font-size:.7rem;color:${color};margin-bottom:.2rem;font-weight:600">${label}</div>
+        <div style="white-space:pre-wrap">${renderMarkdown(text)}</div>
+      </div>`);
+
+    } else if (type === "tool_use") {
+      const toolName = part.tool || part.name || part.tool_name || "tool";
+      const state = part.state || {};
+      const input = state.input || part.input || {};
+      const inputStr = typeof input === "string" ? input : JSON.stringify(input, null, 2);
+      const out = state.output || "";
+      const err = state.error || "";
+      const hasResult = out || err;
+      const resultStr = err
+        ? `ERROR: ${typeof err === "string" ? err : JSON.stringify(err)}`
+        : (typeof out === "string" ? out : JSON.stringify(out, null, 2));
+      const borderColor = err ? "var(--danger)" : "var(--border)";
+      blocks.push(`<details style="border:1px solid ${borderColor};border-radius:4px;padding:.3rem .6rem">
+        <summary style="cursor:pointer;font-size:.75rem;color:var(--text-muted)">⚙ ${escHtml(toolName)}</summary>
+        <pre style="margin:.4rem 0 0;font-size:.75rem;overflow-x:auto;color:var(--text-muted)">${escHtml(inputStr)}</pre>
+        ${hasResult ? `<pre style="margin:.4rem 0 0;font-size:.75rem;overflow-x:auto;border-top:1px solid var(--border);padding-top:.4rem">${escHtml(resultStr)}</pre>` : ""}
+      </details>`);
+
+    } else if (type === "tool_result") {
+      // opencode embeds results in tool_use; this handles any separate result events
+      const state = part.state || {};
+      const out = state.output || part.output || part.content || "";
+      const err = state.error || part.error || "";
+      const content = err ? `ERROR: ${err}` : (typeof out === "string" ? out : JSON.stringify(out, null, 2));
+      if (!content.trim()) continue;
+      const color = err ? "var(--danger)" : "var(--border)";
+      blocks.push(`<details style="border:1px solid ${color};border-radius:4px;padding:.3rem .6rem">
+        <summary style="cursor:pointer;font-size:.75rem;color:var(--text-muted)">↩ result</summary>
+        <pre style="margin:.4rem 0 0;font-size:.75rem;overflow-x:auto">${escHtml(content)}</pre>
+      </details>`);
+    }
+  }
+
+  return blocks.length
+    ? blocks.join("")
+    : '<div style="color:var(--text-muted);font-style:italic">No displayable content</div>';
+}
+
 window.viewRunOutput = async (runId) => {
   try {
     const res = await apiFetch(`/api/tasks/runs/${runId}`);
     const run = await res.json();
     const outputEl = document.getElementById("run-output");
-    outputEl.innerHTML = renderMarkdown(run.output || "No output");
+    outputEl.innerHTML = renderSession(run.output);
     document.getElementById("run-output-container").style.display = "block";
-    outputEl.scrollTop = 0;
+    outputEl.scrollTop = outputEl.scrollHeight;
+    _activeRunId = run.status === "running" ? runId : null;
+    if (_activeRunId) startPolling();
   } catch (e) {
     alert("Error loading output: " + e.message);
   }
 };
 
-window.closeRunsModal = () => document.getElementById("runs-modal").classList.remove("open");
+window.closeRunsModal = () => {
+  document.getElementById("runs-modal").classList.remove("open");
+  _activeRunId = null;
+};
 
 document.getElementById("task-modal").addEventListener("click", e => {
   if (e.target === document.getElementById("task-modal")) closeTaskModal();

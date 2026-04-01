@@ -25,6 +25,7 @@ dependencies = [
     "anyio==4.7.0",
     "websockets==14.1",
     "greenlet==3.1.1",
+    "youtube-transcript-api>=0.6.0",
 ]
 
 [project.optional-dependencies]
@@ -35,10 +36,12 @@ dev = [
 
 [project.scripts]
 mt-butterfly = "app.cli:main"
+mt-butterfly-gmail = "app.tools.gmail:main"
+mt-butterfly-youtube = "app.tools.youtube:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]
 
 [tool.setuptools.package-data]
-app = ["templates/**/*", "static/**/*"]
+app = ["templates/**/*", "static/**/*", "skills/**/*"]

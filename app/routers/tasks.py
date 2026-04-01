@@ -11,7 +11,7 @@ from app.database import get_db
 from app.models import Task, TaskRun
 from app.services.scheduler import schedule_task, unschedule_task
 from app.services.opencode import run_opencode
-from app.services.email import send_gmail
+from app.tools.gmail import send_gmail
 
 router = APIRouter(dependencies=[Depends(verify_token)])
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -87,6 +87,7 @@ async def _task_with_last_run(task: Task, db: AsyncSession) -> dict:
 def _ensure_workspace(task: Task) -> None:
     """Create workspace dir for task from WORKSPACES_DIR + task name slug."""
     from app.config import settings
+    import json
     import re
     if not settings.workspaces_dir:
         raise ValueError("WORKSPACES_DIR not configured")
@@ -94,6 +95,22 @@ def _ensure_workspace(task: Task) -> None:
     workspace = Path(settings.workspaces_dir) / slug
     workspace.mkdir(parents=True, exist_ok=True)
     task.working_dir = str(workspace)
+
+    # Allow opencode to operate without interactive permission prompts
+    opencode_cfg = workspace / "opencode.json"
+    if not opencode_cfg.exists():
+        opencode_cfg.write_text(json.dumps({
+            "$schema": "https://opencode.ai/config.json",
+            "permission": {"read": "allow", "write": "allow", "bash": "allow"},
+        }, indent=2))
+
+    # Write actual credentials so opencode can use them if needed
+    env_file = workspace / ".env"
+    env_lines = [
+        f"GMAIL_USER={settings.gmail_user}",
+        f"GMAIL_APP_PASSWORD={settings.gmail_app_password}",
+    ]
+    env_file.write_text("\n".join(env_lines) + "\n")
 
 
 # ── REST ──────────────────────────────────────────────────────────────────────

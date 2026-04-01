@@ -54,11 +54,12 @@ def _run_wizard(args: argparse.Namespace) -> bool:
     force = args.config
     has_cli_token = bool(args.token)
     
-    if not force and _env_has_valid_token():
-        return False
-    
-    if not force and has_cli_token:
+    has_cli_args = any([args.token, args.workspaces_dir, args.gmail_user, args.gmail_password])
+    if not force and has_cli_args:
         _write_env_from_args(args)
+        return False
+
+    if not force and _env_has_valid_token():
         return False
     
     app_support = _get_app_support_dir()
@@ -116,29 +117,44 @@ WORKSPACES_DIR={workspaces_dir}
     return True
 
 
+def _read_existing_env() -> dict:
+    """Read existing .env into a dict, ignoring comments and blank lines."""
+    env_path = _get_env_path()
+    result = {}
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, _, value = line.partition("=")
+                result[key.strip()] = value.strip()
+    return result
+
+
 def _write_env_from_args(args: argparse.Namespace) -> None:
     app_support = _get_app_support_dir()
     app_support.mkdir(parents=True, exist_ok=True)
     env_path = _get_env_path()
-    
-    auth_token = args.token
-    workspaces_dir = args.workspaces_dir or str(Path.home() / "mt-butterfly")
-    gmail_user = args.gmail_user
-    gmail_app_password = args.gmail_password
-    
-    env_content = f"""AUTH_TOKEN={auth_token}
-WORKSPACES_DIR={workspaces_dir}
-"""
-    if gmail_user:
-        env_content += f"GMAIL_USER={gmail_user}\n"
-    if gmail_app_password:
-        env_content += f"GMAIL_APP_PASSWORD={gmail_app_password}\n"
-    
+
+    # Start from existing values so partial updates don't lose other settings
+    current = _read_existing_env()
+    if args.token:
+        current["AUTH_TOKEN"] = args.token
+    if args.workspaces_dir:
+        current["WORKSPACES_DIR"] = args.workspaces_dir
+    if args.gmail_user:
+        current["GMAIL_USER"] = args.gmail_user
+    if args.gmail_password:
+        current["GMAIL_APP_PASSWORD"] = args.gmail_password
+
+    current.setdefault("AUTH_TOKEN", "dev-token")
+    current.setdefault("WORKSPACES_DIR", str(Path.home() / "mt-butterfly"))
+
+    env_content = "".join(f"{k}={v}\n" for k, v in current.items())
     env_path.write_text(env_content)
-    Path(workspaces_dir).mkdir(parents=True, exist_ok=True)
-    
+    Path(current["WORKSPACES_DIR"]).mkdir(parents=True, exist_ok=True)
+
     print(f"Configuration written to: {env_path}")
-    print(f"Access URL: http://localhost:8000/?t={auth_token}")
+    print(f"Access URL: http://localhost:8000/?t={current['AUTH_TOKEN']}")
     print()
 
 

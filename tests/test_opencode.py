@@ -85,13 +85,13 @@ async def test_stream_opencode_yields_chunks():
     proc = make_mock_proc(EVENTS)
     with patch("asyncio.create_subprocess_exec", return_value=proc):
         chunks = []
-        async for chunk, sid in stream_opencode("say hello"):
-            chunks.append((chunk, sid))
+        async for chunk, sid, raw in stream_opencode("say hello"):
+            chunks.append((chunk, sid, raw))
 
     # First yield: empty chunk with session_id
-    assert chunks[0] == ("", "ses_abc123")
+    assert chunks[0][:2] == ("", "ses_abc123")
     # Rest: text chunks
-    texts = [c for c, s in chunks if c]
+    texts = [c for c, s, r in chunks if c]
     assert texts == ["Hello ", "world!"]
 
 

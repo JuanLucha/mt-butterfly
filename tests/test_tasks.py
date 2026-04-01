@@ -151,16 +151,18 @@ async def test_run_task_executes_opencode_and_saves_run():
             await db.refresh(task)
             task_id = task.id
 
-        with patch("app.services.opencode.run_opencode", new_callable=AsyncMock,
-                   return_value=("Task done!", "ses_123")):
-            with patch("app.services.email.send_gmail", new_callable=AsyncMock):
+        async def mock_stream(*a, **kw):
+            yield ("Task done!", None, '{"type":"text","part":{"text":"Task done!"}}')
+
+        with patch("app.services.opencode.stream_opencode", side_effect=mock_stream):
+            with patch("app.tools.gmail.send_gmail", new_callable=AsyncMock):
                 await _run_task(task_id)
 
         async with sf() as db:
             runs = await db.execute(select(TaskRun).where(TaskRun.task_id == task_id))
             run = runs.scalar_one()
             assert run.status == "success"
-            assert run.output == "Task done!"
+            assert '{"type":"text"' in run.output
             assert run.completed_at is not None
     finally:
         db_module.async_session_factory = orig_sf
@@ -193,9 +195,11 @@ async def test_run_task_sends_email_on_completion():
             await db.refresh(task)
             task_id = task.id
 
-        with patch("app.services.opencode.run_opencode", new_callable=AsyncMock,
-                   return_value=("output text", None)):
-            with patch("app.services.email.send_gmail", new_callable=AsyncMock) as mock_mail:
+        async def mock_stream(*a, **kw):
+            yield ("output text", None, '{"type":"text","part":{"text":"output text"}}')
+
+        with patch("app.services.opencode.stream_opencode", side_effect=mock_stream):
+            with patch("app.tools.gmail.send_gmail", new_callable=AsyncMock) as mock_mail:
                 await _run_task(task_id)
 
         mock_mail.assert_called_once()

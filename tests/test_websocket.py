@@ -6,15 +6,15 @@ from tests.conftest import TEST_TOKEN
 T = {"t": TEST_TOKEN}
 
 MOCK_EVENTS = [
-    ("", "ses_new123"),
-    ("Hello ", None),
-    ("there!", None),
+    ("", "ses_new123", None),
+    ("Hello ", None, '{"type":"text","part":{"text":"Hello "}}'),
+    ("there!", None, '{"type":"text","part":{"text":"there!"}}'),
 ]
 
 
 async def mock_stream(*args, **kwargs):
-    for chunk, sid in MOCK_EVENTS:
-        yield chunk, sid
+    for chunk, sid, raw in MOCK_EVENTS:
+        yield chunk, sid, raw
 
 
 def test_websocket_rejects_without_token(sync_client):

@@ -11,9 +11,10 @@ async def stream_opencode(
     message: str,
     session_id: str | None = None,
     working_dir: str | None = None,
-) -> AsyncIterator[tuple[str, str | None]]:
+) -> AsyncIterator[tuple[str, str | None, str | None]]:
     """
-    Yields (chunk_text, session_id_or_None) as opencode produces output.
+    Yields (chunk_text, session_id_or_None, raw_json_line_or_None).
+    raw_json_line is the original JSON string for every parsed event.
     session_id is yielded once on the first event that contains it.
     On error raises RuntimeError.
     """
@@ -53,7 +54,7 @@ async def stream_opencode(
             sid = event.get("sessionID")
             if sid:
                 discovered_session_id = sid
-                yield ("", discovered_session_id)
+                yield ("", discovered_session_id, None)
 
         # Extract text from different event types
         event_type = event.get("type")
@@ -88,8 +89,7 @@ async def stream_opencode(
             f"Event type: {event_type}, extracted text: {text[:200] if text else 'EMPTY'}"
         )
 
-        if text:
-            yield (text, None)
+        yield (text or "", None, line)
 
     await proc.wait()
     logger.info(f"Process finished with return code: {proc.returncode}")
@@ -117,7 +117,7 @@ async def run_opencode(
     parts: list[str] = []
     found_session_id = session_id
 
-    async for chunk, sid in stream_opencode(message, session_id, working_dir):
+    async for chunk, sid, _raw in stream_opencode(message, session_id, working_dir):
         if sid:
             found_session_id = sid
         if chunk:

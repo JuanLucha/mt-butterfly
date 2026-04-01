@@ -17,7 +17,6 @@ async def _run_task(task_id: str) -> None:
     from app.database import async_session_factory
     from app.models import Task, TaskRun
     from app.services.opencode import run_opencode
-    from app.services.email import send_gmail
     from sqlalchemy import select
 
     logger.info(f"Starting task {task_id}")
@@ -35,33 +34,47 @@ async def _run_task(task_id: str) -> None:
         await db.refresh(run)
 
         try:
-            constrained_prompt = f"You MUST work only inside the directory: {task.working_dir}\n\n{task.prompt}"
+            from app.services.opencode import stream_opencode
+            email_instruction = (
+                f"  mt-butterfly-gmail --to {task.email_to} --subject \"<subject>\" --body-file <path>\n"
+                if task.email_to else
+                "  (no recipient configured for this task — skip email)\n"
+            )
+            constrained_prompt = (
+                f"You MUST work only inside the directory: {task.working_dir}\n\n"
+                f"## Available CLI tools\n\n"
+                f"To send an email via Gmail (credentials are pre-configured, DO NOT use any other address):\n"
+                f"{email_instruction}"
+                f"  mt-butterfly-gmail --to <address> --subject \"<subject>\" --body \"<body>\"\n\n"
+                f"To download YouTube transcripts:\n"
+                f"  mt-butterfly-youtube <video_url_or_id> [--format json] [--output-dir <dir>] [--print]\n\n"
+                f"## Task\n\n"
+                f"{task.prompt}"
+            )
             logger.info(f"Running opencode in {task.working_dir}")
             logger.info(f"Prompt: {constrained_prompt[:200]}...")
-            output, _ = await run_opencode(
+            raw_lines: list[str] = []
+            text_parts: list[str] = []
+            async for chunk, _sid, raw in stream_opencode(
                 constrained_prompt, working_dir=task.working_dir
-            )
-            logger.info(f"Opencode output length: {len(output)}")
-            logger.info(f"Opencode output: {output[:500] if output else 'EMPTY'}")
+            ):
+                if raw:
+                    raw_lines.append(raw)
+                if chunk:
+                    text_parts.append(chunk)
+            output = "\n".join(raw_lines)
+            output_text = "".join(text_parts)
+            logger.info(f"Opencode raw lines: {len(raw_lines)}")
             run.status = "success"
         except Exception as e:
             logger.exception(f"Task {task_id} failed: {e}")
             output = str(e)
+            output_text = output
             run.status = "error"
 
         run.output = output
         run.completed_at = datetime.now(UTC)
         await db.commit()
-
-    # Send email if configured
-    if task.email_to and task.email_to.strip():
-        recipients = [e.strip() for e in task.email_to.split(",") if e.strip()]
-        subject = f"[mt-butterfly] Task '{task.name}' — {run.status}"
-        body = f"Task: {task.name}\nStatus: {run.status}\nStarted: {run.started_at}\nFinished: {run.completed_at}\n\n--- Output ---\n\n{output}"
-        try:
-            await send_gmail(recipients, subject, body)
-        except Exception:
-            pass  # Don't fail the run if email fails
 
 
 def schedule_task(task) -> None:
