@@ -60,22 +60,29 @@ async def stream_opencode(
         text = None
 
         part = event.get("part", {})
+        state = part.get("state", {})
 
         if event_type == "text":
             text = part.get("text", "")
         elif event_type == "message":
-            # Message type might have content
-            text = part.get("content", "")
-            if isinstance(text, list):
-                text = "".join(t.get("text", "") for t in text if isinstance(t, dict))
-        elif event_type == "tool_use":
-            text = part.get("input", "")
-            if isinstance(text, dict):
-                text = str(text)
-        elif event_type == "tool_result":
-            text = part.get("content", "")
-            if isinstance(text, list):
-                text = "".join(t.get("text", "") for t in text if isinstance(t, dict))
+            content = part.get("content", "")
+            if isinstance(content, list):
+                text = "".join(
+                    t.get("text", "") for t in content if isinstance(t, dict)
+                )
+            elif isinstance(content, str):
+                text = content
+        elif event_type == "tool_use" or event_type == "tool_result":
+            # Extract from state - tools put output here
+            state_output = state.get("output", "")
+            state_error = state.get("error", "")
+
+            if state_output:
+                text = (
+                    state_output if isinstance(state_output, str) else str(state_output)
+                )
+            elif state_error:
+                text = f"ERROR: {state_error}"
 
         logger.info(
             f"Event type: {event_type}, extracted text: {text[:200] if text else 'EMPTY'}"
