@@ -35,7 +35,7 @@ async def stream_opencode(
 
     async for raw_line in proc.stdout:
         line = raw_line.decode().strip()
-        logger.info(f"Received line: {line[:200] if line else 'EMPTY'}")
+        logger.info(f"Received line: {line[:500] if line else 'EMPTY'}")
         if not line:
             continue
         try:
@@ -43,6 +43,10 @@ async def stream_opencode(
         except json.JSONDecodeError:
             logger.warning(f"Failed to parse JSON: {line[:100]}")
             continue
+
+        # Log full event structure
+        logger.info(f"Full event keys: {list(event.keys())}")
+        logger.info(f"Event part keys: {list(event.get('part', {}).keys())}")
 
         # Extract session ID from any event
         if discovered_session_id is None:
@@ -55,20 +59,26 @@ async def stream_opencode(
         event_type = event.get("type")
         text = None
 
+        part = event.get("part", {})
+
         if event_type == "text":
-            text = event.get("part", {}).get("text", "")
+            text = part.get("text", "")
+        elif event_type == "message":
+            # Message type might have content
+            text = part.get("content", "")
+            if isinstance(text, list):
+                text = "".join(t.get("text", "") for t in text if isinstance(t, dict))
         elif event_type == "tool_use":
-            # Tool use might have input in the part
-            text = event.get("part", {}).get("input", "")
+            text = part.get("input", "")
             if isinstance(text, dict):
                 text = str(text)
         elif event_type == "tool_result":
-            text = event.get("part", {}).get("content", "")
+            text = part.get("content", "")
             if isinstance(text, list):
                 text = "".join(t.get("text", "") for t in text if isinstance(t, dict))
 
         logger.info(
-            f"Event type: {event_type}, text: {text[:100] if text else 'EMPTY'}"
+            f"Event type: {event_type}, extracted text: {text[:200] if text else 'EMPTY'}"
         )
 
         if text:
