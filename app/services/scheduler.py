@@ -42,8 +42,13 @@ async def _run_task(task_id: str) -> None:
             )
             constrained_prompt = (
                 f"You MUST work only inside the directory: {task.working_dir}\n\n"
-                f"## Available CLI tools\n\n"
-                f"To send an email via Gmail (credentials are pre-configured, DO NOT use any other address):\n"
+                f"## STRICT RULES — follow these exactly\n\n"
+                f"1. Do NOT write Python scripts or any custom code to accomplish the task.\n"
+                f"2. Do NOT use pip, install packages, or import libraries.\n"
+                f"3. Do NOT use smtplib, requests, or any other library to send emails or fetch data.\n"
+                f"4. You MUST use ONLY the CLI tools listed below for all operations.\n\n"
+                f"## CLI tools (use these and nothing else)\n\n"
+                f"To send an email via Gmail (credentials are pre-configured):\n"
                 f"{email_instruction}"
                 f"  mt-butterfly-gmail --to <address> --subject \"<subject>\" --body \"<body>\"\n\n"
                 f"To download YouTube transcripts:\n"
