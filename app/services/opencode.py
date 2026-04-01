@@ -51,11 +51,28 @@ async def stream_opencode(
                 discovered_session_id = sid
                 yield ("", discovered_session_id)
 
-        if event.get("type") == "text":
+        # Extract text from different event types
+        event_type = event.get("type")
+        text = None
+
+        if event_type == "text":
             text = event.get("part", {}).get("text", "")
-            logger.info(f"Yielding text: {text[:100] if text else 'EMPTY'}")
-            if text:
-                yield (text, None)
+        elif event_type == "tool_use":
+            # Tool use might have input in the part
+            text = event.get("part", {}).get("input", "")
+            if isinstance(text, dict):
+                text = str(text)
+        elif event_type == "tool_result":
+            text = event.get("part", {}).get("content", "")
+            if isinstance(text, list):
+                text = "".join(t.get("text", "") for t in text if isinstance(t, dict))
+
+        logger.info(
+            f"Event type: {event_type}, text: {text[:100] if text else 'EMPTY'}"
+        )
+
+        if text:
+            yield (text, None)
 
     await proc.wait()
     logger.info(f"Process finished with return code: {proc.returncode}")
