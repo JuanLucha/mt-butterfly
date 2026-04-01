@@ -24,7 +24,7 @@ dependencies = [
     "pytest-asyncio==0.24.0",
     "anyio==4.7.0",
     "websockets==14.1",
-    "greenlet==3.1.1",
+    "greenlet>=3.1.1",
     "youtube-transcript-api>=0.6.0",
 ]
 
