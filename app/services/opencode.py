@@ -35,9 +35,9 @@ async def stream_opencode(
 
     async for raw_line in proc.stdout:
         line = raw_line.decode().strip()
+        logger.info(f"Received line: {line[:200] if line else 'EMPTY'}")
         if not line:
             continue
-        logger.debug(f"Raw line: {line[:200]}")
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
@@ -53,15 +53,19 @@ async def stream_opencode(
 
         if event.get("type") == "text":
             text = event.get("part", {}).get("text", "")
+            logger.info(f"Yielding text: {text[:100] if text else 'EMPTY'}")
             if text:
                 yield (text, None)
 
     await proc.wait()
+    logger.info(f"Process finished with return code: {proc.returncode}")
 
     if proc.returncode != 0:
         stderr = await proc.stderr.read()
         err_msg = (
-            stderr.decode().strip() or f"opencode exited with code {proc.returncode}"
+            stderr.decode().strip()
+            if stderr
+            else f"opencode exited with code {proc.returncode}"
         )
         logger.error(f"Opencode error: {err_msg}")
         raise RuntimeError(err_msg)
