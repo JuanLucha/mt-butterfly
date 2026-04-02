@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     gmail_app_password: str = ""
     database_url: str = ""
     opencode_path: str = "opencode"
+    task_timeout_minutes: int = 30
+    task_max_concurrent: int = 2
+    task_run_retention_days: int = 30
 
     model_config = SettingsConfigDict(env_file=_get_env_files(), env_file_encoding="utf-8")
 

@@ -51,6 +51,7 @@ class Task(Base):
     working_dir: Mapped[str] = mapped_column(String(512), nullable=False)
     email_to: Mapped[str | None] = mapped_column(String(512), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    timeout_minutes: Mapped[int] = mapped_column(Integer, default=30)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
     runs: Mapped[list["TaskRun"]] = relationship(

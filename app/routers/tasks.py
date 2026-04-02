@@ -35,6 +35,7 @@ class TaskCreate(BaseModel):
     days_of_week: str = "mon,tue,wed,thu,fri"
     email_to: str | None = None
     enabled: bool = True
+    timeout_minutes: int = 30
 
     @field_validator("hour")
     @classmethod
@@ -75,6 +76,7 @@ async def _task_with_last_run(task: Task, db: AsyncSession) -> dict:
         "working_dir": task.working_dir,
         "email_to": task.email_to,
         "enabled": task.enabled,
+        "timeout_minutes": task.timeout_minutes,
         "created_at": task.created_at,
         "last_run": {
             "id": last.id,
