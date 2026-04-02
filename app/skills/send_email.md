@@ -1,13 +1,16 @@
 # send-email
 
-Send an email via Gmail using the project's Gmail tool.
+Send an email via Gmail using the project's Gmail CLI tool.
 
 ## Usage
 
 ```
-python -m app.tools.gmail --to <address> [<address> ...] --subject "<subject>" --body "<body>"
-python -m app.tools.gmail --to <address> --subject "<subject>" --body-file <path>
+mt-butterfly-gmail --to <address> [<address> ...] --subject "<subject>" --body "<body>"
+mt-butterfly-gmail --to <address> --subject "<subject>" --body-file <path>
+mt-butterfly-gmail --to <address> --subject "<subject>" --body-file <path.html> --html
 ```
+
+Use `--html` when the body is an HTML file so it renders correctly in email clients.
 
 ## Requirements
 
@@ -21,7 +24,7 @@ python -m app.tools.gmail --to <address> --subject "<subject>" --body-file <path
 
 Send a short message:
 ```bash
-python -m app.tools.gmail \
+mt-butterfly-gmail \
   --to recipient@example.com \
   --subject "Hello from mt-butterfly" \
   --body "This is a test email."
@@ -29,10 +32,19 @@ python -m app.tools.gmail \
 
 Send to multiple recipients with body from a file:
 ```bash
-python -m app.tools.gmail \
+mt-butterfly-gmail \
   --to alice@example.com bob@example.com \
   --subject "Report ready" \
   --body-file /tmp/report.txt
+```
+
+Send an HTML email:
+```bash
+mt-butterfly-gmail \
+  --to recipient@example.com \
+  --subject "Weekly digest" \
+  --body-file /tmp/digest.html \
+  --html
 ```
 
 ## Arguments
@@ -43,6 +55,7 @@ python -m app.tools.gmail \
 | `--subject` | yes | Email subject line |
 | `--body` | no* | Body text as a string |
 | `--body-file` | no* | Path to a file whose contents become the body |
+| `--html` | no | Treat body as HTML (use with `--body-file` for HTML files) |
 
 *If neither `--body` nor `--body-file` is given, the body is read from stdin.
 

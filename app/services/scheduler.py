@@ -1,10 +1,23 @@
 import json
 import logging
 import asyncio
+from pathlib import Path
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from datetime import datetime, UTC, timedelta
 from app.config import settings
+
+_SKILLS_DIR = Path(__file__).parent.parent / "skills"
+
+
+def _load_skills() -> str:
+    """Load all skill .md files from app/skills/ and return them concatenated."""
+    if not _SKILLS_DIR.exists():
+        return ""
+    parts = []
+    for skill_file in sorted(_SKILLS_DIR.glob("*.md")):
+        parts.append(skill_file.read_text())
+    return "\n\n---\n\n".join(parts)
 
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
@@ -92,30 +105,27 @@ async def _run_task(task_id: str) -> None:
 
             try:
                 email_instruction = (
+                    f"Default recipient for this task: {task.email_to}\n"
                     f"  mt-butterfly-gmail --to {task.email_to} --subject \"<subject>\" --body-file <path>\n"
                     if task.email_to else
-                    "  (no recipient configured for this task — skip email)\n"
+                    "(no recipient configured for this task — skip email)\n"
                 )
+                skills_docs = _load_skills()
                 constrained_prompt = (
                     f"You MUST work only inside the directory: {task.working_dir}\n\n"
                     f"## STRICT RULES — follow these exactly\n\n"
                     f"1. Do NOT write Python scripts or any custom code to accomplish the task.\n"
                     f"2. Do NOT use pip, install packages, or import libraries.\n"
                     f"3. Do NOT use smtplib, requests, or any other library to send emails or fetch data.\n"
-                    f"4. You MUST use ONLY the CLI tools listed below for all operations.\n\n"
-                    f"## CLI tools (use these and nothing else)\n\n"
-                    f"To send an email via Gmail (credentials are pre-configured):\n"
-                    f"{email_instruction}"
-                    f"  mt-butterfly-gmail --to <address> --subject \"<subject>\" --body \"<body>\"\n"
-                    f"  mt-butterfly-gmail --to <address> --subject \"<subject>\" --body-file <path.html> --html\n"
-                    f"  Use --html when the body is an HTML file so it renders correctly in email clients.\n\n"
+                    f"4. You MUST use ONLY the CLI tools documented below for all operations.\n\n"
+                    f"## Available CLI tools\n\n"
+                    f"{skills_docs}\n\n"
+                    f"## Email recipient\n\n"
+                    f"{email_instruction}\n"
                     f"When generating an HTML email body, follow this structure and style:\n"
                     f"  - Title at the top\n"
                     f"  - For each channel: channel name, then for each video: video title, bullet-point list of key points, an 'Actionables' box with extracted action items, and a link to the video\n"
                     f"  - Use high-contrast colours: dark backgrounds (#1a1a2e or similar) with light text (#f0f0f0), accent colours with sufficient contrast ratio. Avoid low-contrast combos like blue text on grey.\n\n"
-                    f"To download YouTube transcripts:\n"
-                    f"  mt-butterfly-youtube <video_url_or_id> [--format json] [--output-dir <dir>] [--print]\n"
-                    f"  Do NOT pass --lang. The tool auto-selects the transcript language.\n\n"
                     f"## Task\n\n"
                     f"{task.prompt}"
                 )
