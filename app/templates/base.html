@@ -13,7 +13,8 @@
     <a href="javascript:void(0)" onclick="navigate('/tasks')" id="nav-tasks">Tasks</a>
   </nav>
   {% block content %}{% endblock %}
-  <script src="/static/app.js?v={{ asset_v }}"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="/static/api.js?v={{ asset_v }}"></script>
   {% block extra_js %}{% endblock %}
 </body>
 </html>
