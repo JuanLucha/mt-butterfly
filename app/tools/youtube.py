@@ -1,10 +1,17 @@
-"""YouTube transcript tool — downloads transcripts for one or more YouTube videos."""
+"""YouTube transcript tool — downloads transcripts for one or more YouTube videos.
+
+Also supports listing recent videos from a channel via its RSS feed.
+"""
 
 import argparse
 import json
 import re
 import sys
+import xml.etree.ElementTree as ET
+from datetime import datetime, timedelta, UTC
 from pathlib import Path
+
+import httpx
 
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import (
@@ -75,6 +82,101 @@ def fetch_transcript(
     }
 
 
+def resolve_channel_id(channel_input: str) -> str:
+    """Resolve a channel URL, handle (@name), or bare ID to a channel_id.
+
+    Supported formats:
+      - https://www.youtube.com/channel/UC...
+      - https://www.youtube.com/@handle
+      - @handle
+      - bare channel ID (UC...)
+    """
+    # Direct channel ID
+    if re.fullmatch(r"UC[A-Za-z0-9_-]{22}", channel_input):
+        return channel_input
+
+    # URL with /channel/UC...
+    m = re.search(r"/channel/(UC[A-Za-z0-9_-]{22})", channel_input)
+    if m:
+        return m.group(1)
+
+    # Handle: @name or URL containing @name
+    handle = None
+    m = re.search(r"(@[\w.-]+)", channel_input)
+    if m:
+        handle = m.group(1)
+    if not handle:
+        raise ValueError(f"Cannot parse channel from: {channel_input!r}")
+
+    # Resolve handle by fetching the channel page and extracting channel_id.
+    # The SOCS cookie bypasses the EU consent page that would otherwise block scraping.
+    url = f"https://www.youtube.com/{handle}"
+    resp = httpx.get(url, follow_redirects=True, timeout=15, headers={
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+        "Cookie": "SOCS=CAISNQgDEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjMwODI5LjA3X3AxGgJlbiACGgYIgOupmQY",
+    })
+    resp.raise_for_status()
+
+    m = re.search(r'"channelId"\s*:\s*"(UC[A-Za-z0-9_-]{22})"', resp.text)
+    if m:
+        return m.group(1)
+    raise ValueError(f"Could not resolve channel ID for {channel_input!r}")
+
+
+_ATOM_NS = {"atom": "http://www.w3.org/2005/Atom", "yt": "http://www.youtube.com/xml/schemas/2015"}
+
+
+def fetch_channel_videos(channel_id: str, since: timedelta | None = None) -> list[dict]:
+    """Fetch recent videos from a channel's RSS feed.
+
+    Returns a list of dicts: {video_id, title, published, url}
+    sorted by published date descending.
+    """
+    feed_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+    resp = httpx.get(feed_url, timeout=15,
+                     headers={"User-Agent": "Mozilla/5.0"})
+    resp.raise_for_status()
+
+    root = ET.fromstring(resp.text)
+    cutoff = datetime.now(UTC) - since if since else None
+    videos = []
+
+    for entry in root.findall("atom:entry", _ATOM_NS):
+        video_id_el = entry.find("yt:videoId", _ATOM_NS)
+        title_el = entry.find("atom:title", _ATOM_NS)
+        published_el = entry.find("atom:published", _ATOM_NS)
+
+        if video_id_el is None or title_el is None or published_el is None:
+            continue
+
+        published_str = published_el.text
+        # Parse ISO 8601: 2024-01-15T12:00:00+00:00
+        published = datetime.fromisoformat(published_str)
+
+        if cutoff and published < cutoff:
+            continue
+
+        videos.append({
+            "video_id": video_id_el.text,
+            "title": title_el.text,
+            "published": published_str,
+            "url": f"https://www.youtube.com/watch?v={video_id_el.text}",
+        })
+
+    return videos
+
+
+def parse_since(since_str: str) -> timedelta:
+    """Parse a human duration like '24h', '2d', '48h' into a timedelta."""
+    m = re.fullmatch(r"(\d+)\s*(h|d)", since_str.strip().lower())
+    if not m:
+        raise ValueError(f"Invalid --since format: {since_str!r}. Use e.g. '24h' or '7d'.")
+    value, unit = int(m.group(1)), m.group(2)
+    if unit == "h":
+        return timedelta(hours=value)
+    return timedelta(days=value)
+
+
 def save_transcript(result: dict, output_dir: Path, fmt: str) -> Path:
     """Save a transcript result to disk. Returns the file path written."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -90,13 +192,24 @@ def save_transcript(result: dict, output_dir: Path, fmt: str) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Download transcripts from YouTube videos."
+        description="Download transcripts from YouTube videos, or list recent videos from a channel."
     )
     parser.add_argument(
-        "videos",
+        "targets",
         nargs="+",
-        metavar="VIDEO",
-        help="YouTube URL(s) or video ID(s)",
+        metavar="TARGET",
+        help="YouTube video URL(s)/ID(s), or channel URL(s)/handle(s)/@name(s) when --list-channel is used",
+    )
+    parser.add_argument(
+        "--list-channel",
+        action="store_true",
+        help="List recent videos from the given channel(s) instead of downloading transcripts",
+    )
+    parser.add_argument(
+        "--since",
+        metavar="DURATION",
+        default=None,
+        help="Only list videos published within this duration (e.g. 24h, 7d). Only used with --list-channel.",
     )
     parser.add_argument(
         "--lang",
@@ -128,10 +241,49 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if args.list_channel:
+        _main_list_channel(args)
+    else:
+        _main_transcript(args)
+
+
+def _main_list_channel(args) -> None:
+    since = parse_since(args.since) if args.since else None
+    errors = []
+
+    for target in args.targets:
+        try:
+            channel_id = resolve_channel_id(target)
+        except (ValueError, httpx.HTTPError) as e:
+            print(f"[ERROR] {target}: {e}", file=sys.stderr)
+            errors.append(target)
+            continue
+
+        try:
+            videos = fetch_channel_videos(channel_id, since=since)
+        except httpx.HTTPError as e:
+            print(f"[ERROR] Failed to fetch feed for {channel_id}: {e}", file=sys.stderr)
+            errors.append(target)
+            continue
+
+        if args.format == "json":
+            print(json.dumps({"channel_id": channel_id, "videos": videos}, ensure_ascii=False, indent=2))
+        else:
+            if not videos:
+                label = f" (since {args.since})" if args.since else ""
+                print(f"[INFO] No videos found for {channel_id}{label}")
+            for v in videos:
+                print(f"{v['video_id']}  {v['published']}  {v['title']}")
+
+    if errors:
+        sys.exit(1)
+
+
+def _main_transcript(args) -> None:
     output_dir = Path(args.output_dir)
     errors = []
 
-    for video_input in args.videos:
+    for video_input in args.targets:
         try:
             video_id = extract_video_id(video_input)
         except ValueError as e:
