@@ -10,6 +10,8 @@ Web service for chatting with OpenCode via web interface, managing multiple chat
 - **Multiple Channels**: Each channel maintains its own OpenCode session/context
 - **Scheduled Tasks**: Configure prompts to run on a schedule and receive results via email
 - **Token Authentication**: Secure access via query string token
+- **Health Check**: `GET /health` endpoint (no auth) reports DB and scheduler status
+- **Log Rotation**: App logs written to platform log dir with automatic rotation (10 MB, 3 backups)
 
 ## Quick Start
 
@@ -74,6 +76,31 @@ launchctl load ~/Library/LaunchAgents/com.mt-butterfly.plist
 ## Tech Stack
 
 - FastAPI + Jinja2 templates + WebSockets
-- SQLite + SQLAlchemy async
+- SQLite + SQLAlchemy async + Alembic migrations
 - APScheduler for task scheduling
 - pytest + pytest-asyncio for testing
+
+## CLI Tools
+
+### `mt-butterfly-youtube`
+
+Download transcripts or list recent videos from a channel:
+
+```bash
+# List videos from the last 24 hours
+mt-butterfly-youtube --list-channel @channelhandle --since 24h
+
+# List in JSON format
+mt-butterfly-youtube --list-channel @channelhandle --since 7d --format json
+
+# Download transcript
+mt-butterfly-youtube VIDEO_ID_OR_URL --print
+```
+
+### `mt-butterfly-gmail`
+
+Send emails from the command line (used by scheduled tasks):
+
+```bash
+mt-butterfly-gmail --to recipient@example.com --subject "Subject" --body-file email.html
+```
