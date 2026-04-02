@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 from unittest.mock import patch, AsyncMock
 from tests.conftest import TEST_TOKEN
@@ -212,6 +213,349 @@ async def test_run_task_sends_email_on_completion():
         assert captured_prompts, "stream_opencode was not called"
         assert "a@b.com" in captured_prompts[0]
         assert "mt-butterfly-gmail" in captured_prompts[0]
+    finally:
+        db_module.async_session_factory = orig_sf
+        await engine.dispose()
+
+
+# ── _ensure_workspace ─────────────────────────────────────────────────────────
+
+def test_ensure_workspace_creates_directory(tmp_path, monkeypatch):
+    from app.routers.tasks import _ensure_workspace
+    from app.models import Task
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "workspaces_dir", str(tmp_path))
+    task = Task(name="My Task", prompt="x", hour=9)
+    _ensure_workspace(task)
+
+    workspace = tmp_path / "my-task"
+    assert workspace.is_dir()
+    assert task.working_dir == str(workspace)
+
+
+def test_ensure_workspace_creates_opencode_json(tmp_path, monkeypatch):
+    from app.routers.tasks import _ensure_workspace
+    from app.models import Task
+    from app.config import settings
+    import json
+
+    monkeypatch.setattr(settings, "workspaces_dir", str(tmp_path))
+    task = Task(name="test-task", prompt="x", hour=9)
+    _ensure_workspace(task)
+
+    cfg = tmp_path / "test-task" / "opencode.json"
+    assert cfg.exists()
+    data = json.loads(cfg.read_text())
+    assert data["permission"]["bash"] == "allow"
+    assert data["permission"]["read"] == "allow"
+    assert data["permission"]["write"] == "allow"
+
+
+def test_ensure_workspace_slug_strips_special_chars(tmp_path, monkeypatch):
+    from app.routers.tasks import _ensure_workspace
+    from app.models import Task
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "workspaces_dir", str(tmp_path))
+    task = Task(name="My Task! 2024", prompt="x", hour=9)
+    _ensure_workspace(task)
+
+    workspace = tmp_path / "my-task--2024"
+    assert workspace.is_dir()
+
+
+def test_ensure_workspace_raises_without_workspaces_dir(monkeypatch):
+    from app.routers.tasks import _ensure_workspace
+    from app.models import Task
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "workspaces_dir", None)
+    task = Task(name="x", prompt="x", hour=9)
+    with pytest.raises(ValueError, match="WORKSPACES_DIR"):
+        _ensure_workspace(task)
+
+
+def test_ensure_workspace_does_not_overwrite_existing_opencode_json(tmp_path, monkeypatch):
+    from app.routers.tasks import _ensure_workspace
+    from app.models import Task
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "workspaces_dir", str(tmp_path))
+    workspace = tmp_path / "my-task"
+    workspace.mkdir()
+    cfg = workspace / "opencode.json"
+    cfg.write_text('{"custom": true}')
+
+    task = Task(name="My Task", prompt="x", hour=9)
+    _ensure_workspace(task)
+
+    assert cfg.read_text() == '{"custom": true}'
+
+
+# ── constrained_prompt content ────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_constrained_prompt_contains_strict_rules():
+    from app.services.scheduler import _run_task
+    from app.database import Base
+    from app.models import Task
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    import app.database as db_module
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    sf = async_sessionmaker(engine, expire_on_commit=False)
+    async with engine.begin() as conn:
+        from app import models  # noqa
+        await conn.run_sync(Base.metadata.create_all)
+
+    orig_sf = db_module.async_session_factory
+    db_module.async_session_factory = sf
+
+    try:
+        async with sf() as db:
+            task = Task(name="t", prompt="do something", hour=9, enabled=True, working_dir="/tmp/t")
+            db.add(task)
+            await db.commit()
+            await db.refresh(task)
+            task_id = task.id
+
+        captured = []
+
+        async def mock_stream(prompt, **kw):
+            captured.append(prompt)
+            yield ("done", None, '{"type":"text","part":{"text":"done"}}')
+
+        with patch("app.services.opencode.stream_opencode", side_effect=mock_stream):
+            await _run_task(task_id)
+
+        assert captured
+        p = captured[0]
+        assert "Do NOT write Python scripts" in p
+        assert "Do NOT use pip" in p
+        assert "smtplib" in p
+        assert "/tmp/t" in p
+        assert "do something" in p
+    finally:
+        db_module.async_session_factory = orig_sf
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_constrained_prompt_no_email_message_when_no_email_to():
+    from app.services.scheduler import _run_task
+    from app.database import Base
+    from app.models import Task
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    import app.database as db_module
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    sf = async_sessionmaker(engine, expire_on_commit=False)
+    async with engine.begin() as conn:
+        from app import models  # noqa
+        await conn.run_sync(Base.metadata.create_all)
+
+    orig_sf = db_module.async_session_factory
+    db_module.async_session_factory = sf
+
+    try:
+        async with sf() as db:
+            task = Task(name="t", prompt="do something", hour=9, enabled=True,
+                        working_dir="/tmp/t", email_to=None)
+            db.add(task)
+            await db.commit()
+            await db.refresh(task)
+            task_id = task.id
+
+        captured = []
+
+        async def mock_stream(prompt, **kw):
+            captured.append(prompt)
+            yield ("done", None, '{"type":"text","part":{"text":"done"}}')
+
+        with patch("app.services.opencode.stream_opencode", side_effect=mock_stream):
+            await _run_task(task_id)
+
+        assert "no recipient configured" in captured[0]
+    finally:
+        db_module.async_session_factory = orig_sf
+        await engine.dispose()
+
+
+# ── _check_output_for_violations ──────────────────────────────────────────────
+
+def test_check_output_no_violations():
+    from app.services.scheduler import _check_output_for_violations
+
+    lines = [
+        '{"type":"tool_use","part":{"input":{"command":"mt-butterfly-gmail --to a@b.com"}}}',
+        '{"type":"text","part":{"text":"done"}}',
+    ]
+    assert _check_output_for_violations(lines) is False
+
+
+def test_check_output_detects_pip_install():
+    from app.services.scheduler import _check_output_for_violations
+
+    lines = [
+        '{"type":"tool_use","part":{"input":{"command":"pip install requests"}}}',
+    ]
+    assert _check_output_for_violations(lines) is True
+
+
+def test_check_output_detects_python_file_creation():
+    from app.services.scheduler import _check_output_for_violations
+
+    lines = [
+        '{"type":"tool_use","part":{"input":{"command":"python send_email.py"}}}',
+    ]
+    assert _check_output_for_violations(lines) is True
+
+
+def test_check_output_detects_smtplib_in_output():
+    from app.services.scheduler import _check_output_for_violations
+
+    lines = [
+        '{"type":"tool_result","part":{"state":{"output":"import smtplib\\nsmtp = smtplib.SMTP(...)"}}}',
+    ]
+    assert _check_output_for_violations(lines) is True
+
+
+def test_check_output_ignores_malformed_json():
+    from app.services.scheduler import _check_output_for_violations
+
+    lines = ["not-json", "{broken"]
+    assert _check_output_for_violations(lines) is False
+
+
+# ── Full flow: timeout and error ──────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_run_task_marks_timeout_status():
+    from app.services.scheduler import _run_task
+    from app.database import Base
+    from app.models import Task, TaskRun
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    from sqlalchemy import select
+    import app.database as db_module
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    sf = async_sessionmaker(engine, expire_on_commit=False)
+    async with engine.begin() as conn:
+        from app import models  # noqa
+        await conn.run_sync(Base.metadata.create_all)
+
+    orig_sf = db_module.async_session_factory
+    db_module.async_session_factory = sf
+
+    try:
+        async with sf() as db:
+            task = Task(name="t", prompt="do it", hour=9, enabled=True,
+                        working_dir="/tmp/t", timeout_minutes=1)
+            db.add(task)
+            await db.commit()
+            await db.refresh(task)
+            task_id = task.id
+
+        async def slow_stream(*a, **kw):
+            await asyncio.sleep(9999)
+            yield ("done", None, '{}')
+
+        with patch("app.services.opencode.stream_opencode", side_effect=slow_stream), \
+             patch("asyncio.wait_for", side_effect=asyncio.TimeoutError):
+            await _run_task(task_id)
+
+        async with sf() as db:
+            runs = await db.execute(select(TaskRun).where(TaskRun.task_id == task_id))
+            run = runs.scalar_one()
+            assert run.status == "timeout"
+            assert "timed out" in run.output
+    finally:
+        db_module.async_session_factory = orig_sf
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_run_task_marks_error_status_on_exception():
+    from app.services.scheduler import _run_task
+    from app.database import Base
+    from app.models import Task, TaskRun
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    from sqlalchemy import select
+    import app.database as db_module
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    sf = async_sessionmaker(engine, expire_on_commit=False)
+    async with engine.begin() as conn:
+        from app import models  # noqa
+        await conn.run_sync(Base.metadata.create_all)
+
+    orig_sf = db_module.async_session_factory
+    db_module.async_session_factory = sf
+
+    try:
+        async with sf() as db:
+            task = Task(name="t", prompt="do it", hour=9, enabled=True, working_dir="/tmp/t")
+            db.add(task)
+            await db.commit()
+            await db.refresh(task)
+            task_id = task.id
+
+        async def failing_stream(*a, **kw):
+            raise RuntimeError("opencode exploded")
+            yield  # make it a generator
+
+        with patch("app.services.opencode.stream_opencode", side_effect=failing_stream):
+            await _run_task(task_id)
+
+        async with sf() as db:
+            runs = await db.execute(select(TaskRun).where(TaskRun.task_id == task_id))
+            run = runs.scalar_one()
+            assert run.status == "error"
+            assert "opencode exploded" in run.output
+    finally:
+        db_module.async_session_factory = orig_sf
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_run_task_marks_needs_review_on_violation():
+    from app.services.scheduler import _run_task
+    from app.database import Base
+    from app.models import Task, TaskRun
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    from sqlalchemy import select
+    import app.database as db_module
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    sf = async_sessionmaker(engine, expire_on_commit=False)
+    async with engine.begin() as conn:
+        from app import models  # noqa
+        await conn.run_sync(Base.metadata.create_all)
+
+    orig_sf = db_module.async_session_factory
+    db_module.async_session_factory = sf
+
+    try:
+        async with sf() as db:
+            task = Task(name="t", prompt="do it", hour=9, enabled=True, working_dir="/tmp/t")
+            db.add(task)
+            await db.commit()
+            await db.refresh(task)
+            task_id = task.id
+
+        violation_line = '{"type":"tool_use","part":{"input":{"command":"pip install requests"}}}'
+
+        async def mock_stream(*a, **kw):
+            yield ("done", None, violation_line)
+
+        with patch("app.services.opencode.stream_opencode", side_effect=mock_stream):
+            await _run_task(task_id)
+
+        async with sf() as db:
+            runs = await db.execute(select(TaskRun).where(TaskRun.task_id == task_id))
+            run = runs.scalar_one()
+            assert run.status == "needs_review"
     finally:
         db_module.async_session_factory = orig_sf
         await engine.dispose()
