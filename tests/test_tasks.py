@@ -249,7 +249,7 @@ def test_ensure_workspace_creates_opencode_json(tmp_path, monkeypatch):
     data = json.loads(cfg.read_text())
     assert data["permission"]["bash"] == "allow"
     assert data["permission"]["read"] == "allow"
-    assert data["permission"]["write"] == "allow"
+    assert data["permission"]["edit"] == "allow"
 
 
 def test_ensure_workspace_slug_strips_special_chars(tmp_path, monkeypatch):
@@ -276,10 +276,11 @@ def test_ensure_workspace_raises_without_workspaces_dir(monkeypatch):
         _ensure_workspace(task)
 
 
-def test_ensure_workspace_does_not_overwrite_existing_opencode_json(tmp_path, monkeypatch):
+def test_ensure_workspace_overwrites_opencode_json(tmp_path, monkeypatch):
     from app.routers.tasks import _ensure_workspace
     from app.models import Task
     from app.config import settings
+    import json
 
     monkeypatch.setattr(settings, "workspaces_dir", str(tmp_path))
     workspace = tmp_path / "my-task"
@@ -290,7 +291,9 @@ def test_ensure_workspace_does_not_overwrite_existing_opencode_json(tmp_path, mo
     task = Task(name="My Task", prompt="x", hour=9)
     _ensure_workspace(task)
 
-    assert cfg.read_text() == '{"custom": true}'
+    data = json.loads(cfg.read_text())
+    assert data["permission"]["bash"] == "allow"
+    assert data["permission"]["edit"] == "allow"
 
 
 # ── constrained_prompt content ────────────────────────────────────────────────

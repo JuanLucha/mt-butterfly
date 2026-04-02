@@ -99,13 +99,20 @@ def _ensure_workspace(task: Task) -> None:
     workspace.mkdir(parents=True, exist_ok=True)
     task.working_dir = str(workspace)
 
-    # Allow opencode to operate without interactive permission prompts
+    # Allow opencode to operate without interactive permission prompts.
+    # Always write the config so stale permission settings get corrected.
     opencode_cfg = workspace / "opencode.json"
-    if not opencode_cfg.exists():
-        opencode_cfg.write_text(json.dumps({
-            "$schema": "https://opencode.ai/config.json",
-            "permission": {"read": "allow", "write": "allow", "bash": "allow"},
-        }, indent=2))
+    opencode_cfg.write_text(json.dumps({
+        "$schema": "https://opencode.ai/config.json",
+        "permission": {
+            "read": "allow",
+            "edit": "allow",
+            "glob": "allow",
+            "grep": "allow",
+            "list": "allow",
+            "bash": "allow",
+        },
+    }, indent=2))
 
     # Credentials are passed as subprocess env vars at runtime — not written to disk.
 
