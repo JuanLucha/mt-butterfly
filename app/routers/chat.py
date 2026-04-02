@@ -15,6 +15,7 @@ from app.models import Channel, Message
 from app.services.opencode import stream_opencode
 
 router = APIRouter(dependencies=[Depends(verify_token)])
+ws_router = APIRouter()  # WebSocket router — no router-level auth (handler does its own handshake)
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
 
@@ -88,14 +89,22 @@ async def get_messages(channel_id: str, db: AsyncSession = Depends(get_db)):
 
 # ── WebSocket ─────────────────────────────────────────────────────────────────
 
-@router.websocket("/ws/chat/{channel_id}")
-async def ws_chat(websocket: WebSocket, channel_id: str, t: str = ""):
-    from app.config import settings as _settings
-    if t != _settings.auth_token:
+@ws_router.websocket("/ws/chat/{channel_id}")
+async def ws_chat(websocket: WebSocket, channel_id: str):
+    import asyncio as _asyncio
+    await websocket.accept()
+
+    # Auth handshake: first message must be {"type": "auth", "token": "..."}
+    try:
+        auth_data = await _asyncio.wait_for(websocket.receive_json(), timeout=15.0)
+    except (_asyncio.TimeoutError, Exception):
         await websocket.close(code=1008)
         return
 
-    await websocket.accept()
+    from app.config import settings as _settings
+    if auth_data.get("type") != "auth" or auth_data.get("token") != _settings.auth_token:
+        await websocket.close(code=1008)
+        return
 
     # Use a fresh DB session for the WS lifetime (via module ref so tests can patch it)
     async with _db_module.async_session_factory() as db:

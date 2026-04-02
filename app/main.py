@@ -16,6 +16,13 @@ from app.config import settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if settings.auth_token == "dev-token":
+        import sys
+        print(
+            "\n⚠  WARNING: AUTH_TOKEN is the insecure default 'dev-token'."
+            " Set AUTH_TOKEN in your config before exposing this service.\n",
+            file=sys.stderr,
+        )
     await init_db()
     Path(settings.workspaces_dir).mkdir(parents=True, exist_ok=True)
     from app.services.scheduler import scheduler, load_all_tasks
@@ -46,4 +53,5 @@ templates.env.globals["asset_v"] = _asset_version()
 from app.routers import chat, tasks  # noqa: E402
 
 app.include_router(chat.router)
+app.include_router(chat.ws_router)
 app.include_router(tasks.router)

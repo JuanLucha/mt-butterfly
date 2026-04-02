@@ -198,14 +198,20 @@ async def test_run_task_sends_email_on_completion():
         async def mock_stream(*a, **kw):
             yield ("output text", None, '{"type":"text","part":{"text":"output text"}}')
 
-        with patch("app.services.opencode.stream_opencode", side_effect=mock_stream):
-            with patch("app.tools.gmail.send_gmail", new_callable=AsyncMock) as mock_mail:
-                await _run_task(task_id)
+        # Email is sent by the LLM via the mt-butterfly-gmail CLI tool, not called
+        # directly from Python. Verify the constrained prompt includes the recipient.
+        captured_prompts = []
 
-        mock_mail.assert_called_once()
-        call_args = mock_mail.call_args
-        assert "a@b.com" in call_args[0][0]
-        assert "email-test" in call_args[0][1]
+        async def mock_stream_capture(*a, **kw):
+            captured_prompts.append(a[0] if a else kw.get("message", ""))
+            yield ("output text", None, '{"type":"text","part":{"text":"output text"}}')
+
+        with patch("app.services.opencode.stream_opencode", side_effect=mock_stream_capture):
+            await _run_task(task_id)
+
+        assert captured_prompts, "stream_opencode was not called"
+        assert "a@b.com" in captured_prompts[0]
+        assert "mt-butterfly-gmail" in captured_prompts[0]
     finally:
         db_module.async_session_factory = orig_sf
         await engine.dispose()

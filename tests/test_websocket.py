@@ -17,21 +17,26 @@ async def mock_stream(*args, **kwargs):
         yield chunk, sid, raw
 
 
-def test_websocket_rejects_without_token(sync_client):
-    from starlette.testclient import WebSocketDenialResponse
+def _auth(ws, token=TEST_TOKEN):
+    """Send the auth handshake message."""
+    ws.send_json({"type": "auth", "token": token})
+
+
+def test_websocket_rejects_bad_token(sync_client):
     create = sync_client.post("/api/channels", params=T, json={"name": "ch"})
     channel_id = create.json()["id"]
-    with pytest.raises(WebSocketDenialResponse) as exc_info:
-        with sync_client.websocket_connect(f"/ws/chat/{channel_id}") as ws:
-            pass
-    assert exc_info.value.status_code == 401
+    with sync_client.websocket_connect(f"/ws/chat/{channel_id}") as ws:
+        ws.send_json({"type": "auth", "token": "wrong-token"})
+        with pytest.raises(Exception):
+            ws.receive_json()
 
 
 def test_websocket_accepts_with_token(sync_client):
     create = sync_client.post("/api/channels", params=T, json={"name": "ch"})
     channel_id = create.json()["id"]
     with patch("app.routers.chat.stream_opencode", side_effect=mock_stream):
-        with sync_client.websocket_connect(f"/ws/chat/{channel_id}?t={TEST_TOKEN}") as ws:
+        with sync_client.websocket_connect(f"/ws/chat/{channel_id}") as ws:
+            _auth(ws)
             ws.send_json({"message": "hi"})
             msgs = []
             for _ in range(10):
@@ -50,7 +55,8 @@ def test_websocket_streams_chunks(sync_client):
     create = sync_client.post("/api/channels", params=T, json={"name": "ch"})
     channel_id = create.json()["id"]
     with patch("app.routers.chat.stream_opencode", side_effect=mock_stream):
-        with sync_client.websocket_connect(f"/ws/chat/{channel_id}?t={TEST_TOKEN}") as ws:
+        with sync_client.websocket_connect(f"/ws/chat/{channel_id}") as ws:
+            _auth(ws)
             ws.send_json({"message": "hello"})
             chunks = []
             while True:
@@ -66,7 +72,8 @@ def test_websocket_persists_messages(sync_client):
     create = sync_client.post("/api/channels", params=T, json={"name": "ch"})
     channel_id = create.json()["id"]
     with patch("app.routers.chat.stream_opencode", side_effect=mock_stream):
-        with sync_client.websocket_connect(f"/ws/chat/{channel_id}?t={TEST_TOKEN}") as ws:
+        with sync_client.websocket_connect(f"/ws/chat/{channel_id}") as ws:
+            _auth(ws)
             ws.send_json({"message": "persist me"})
             while True:
                 msg = ws.receive_json()
@@ -89,7 +96,8 @@ def test_websocket_sends_history_on_connect(sync_client):
 
     # First session: send a message
     with patch("app.routers.chat.stream_opencode", side_effect=mock_stream):
-        with sync_client.websocket_connect(f"/ws/chat/{channel_id}?t={TEST_TOKEN}") as ws:
+        with sync_client.websocket_connect(f"/ws/chat/{channel_id}") as ws:
+            _auth(ws)
             ws.send_json({"message": "first"})
             while True:
                 msg = ws.receive_json()
@@ -98,7 +106,8 @@ def test_websocket_sends_history_on_connect(sync_client):
 
     # Second connection: history messages should arrive before any new exchange
     with patch("app.routers.chat.stream_opencode", side_effect=mock_stream):
-        with sync_client.websocket_connect(f"/ws/chat/{channel_id}?t={TEST_TOKEN}") as ws:
+        with sync_client.websocket_connect(f"/ws/chat/{channel_id}") as ws:
+            _auth(ws)
             ws.send_json({"message": "second"})
             all_msgs = []
             while True:
@@ -111,6 +120,7 @@ def test_websocket_sends_history_on_connect(sync_client):
 
 
 def test_websocket_channel_not_found(sync_client):
-    with sync_client.websocket_connect(f"/ws/chat/nonexistent?t={TEST_TOKEN}") as ws:
+    with sync_client.websocket_connect(f"/ws/chat/nonexistent") as ws:
+        _auth(ws)
         msg = ws.receive_json()
         assert msg["type"] == "error"

@@ -1,14 +1,27 @@
 // ── Token ────────────────────────────────────────────────────────────────────
-const TOKEN = new URLSearchParams(window.location.search).get("t") || "";
+// On first load the token may arrive via ?t= (HTML navigation). Store it in
+// sessionStorage immediately and clean the URL so it doesn't appear in history
+// or server logs on subsequent requests.
+(function () {
+  const params = new URLSearchParams(window.location.search);
+  const t = params.get("t");
+  if (t) {
+    sessionStorage.setItem("mt_token", t);
+    params.delete("t");
+    const clean = window.location.pathname + (params.toString() ? "?" + params.toString() : "");
+    window.history.replaceState({}, "", clean);
+  }
+})();
+
+const TOKEN = sessionStorage.getItem("mt_token") || "";
 
 function navigate(path) {
-  window.location.href = path + (TOKEN ? `?t=${encodeURIComponent(TOKEN)}` : "");
+  window.location.href = path;
 }
 
 async function apiFetch(path, options = {}) {
-  const sep = path.includes("?") ? "&" : "?";
-  const url = path + sep + `t=${encodeURIComponent(TOKEN)}`;
-  const res = await fetch(url, options);
+  options.headers = { ...options.headers, "Authorization": `Bearer ${TOKEN}` };
+  const res = await fetch(path, options);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res;
 }
@@ -96,9 +109,11 @@ if (document.getElementById("channel-list")) {
 
   function connectWS(channelId) {
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    ws = new WebSocket(`${proto}://${location.host}/ws/chat/${channelId}?t=${encodeURIComponent(TOKEN)}`);
+    ws = new WebSocket(`${proto}://${location.host}/ws/chat/${channelId}`);
 
     ws.onopen = () => {
+      // Auth handshake: send token as first message (WS API doesn't support custom headers)
+      ws.send(JSON.stringify({ type: "auth", token: TOKEN }));
       setConnected(true);
       reconnectDelay = 1000;
     };

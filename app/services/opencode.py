@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 from collections.abc import AsyncIterator
 from app.config import settings
 
@@ -25,11 +26,19 @@ async def stream_opencode(
     logger.info(f"Running command: {' '.join(cmd)}")
     logger.info(f"Working directory: {working_dir}")
 
+    # Pass Gmail credentials as env vars so CLI tools can read them without a .env file on disk
+    proc_env = os.environ.copy()
+    if settings.gmail_user:
+        proc_env["GMAIL_USER"] = settings.gmail_user
+    if settings.gmail_app_password:
+        proc_env["GMAIL_APP_PASSWORD"] = settings.gmail_app_password
+
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         cwd=working_dir,
+        env=proc_env,
     )
 
     discovered_session_id: str | None = None

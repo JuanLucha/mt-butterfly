@@ -105,13 +105,7 @@ def _ensure_workspace(task: Task) -> None:
             "permission": {"read": "allow", "write": "allow", "bash": "allow"},
         }, indent=2))
 
-    # Write actual credentials so opencode can use them if needed
-    env_file = workspace / ".env"
-    env_lines = [
-        f"GMAIL_USER={settings.gmail_user}",
-        f"GMAIL_APP_PASSWORD={settings.gmail_app_password}",
-    ]
-    env_file.write_text("\n".join(env_lines) + "\n")
+    # Credentials are passed as subprocess env vars at runtime — not written to disk.
 
 
 # ── REST ──────────────────────────────────────────────────────────────────────
