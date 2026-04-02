@@ -18,6 +18,19 @@ router = APIRouter(dependencies=[Depends(verify_token)])
 ws_router = APIRouter()  # WebSocket router — no router-level auth (handler does its own handshake)
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
+# Active WebSocket connections per channel — supports multiple devices on the same channel
+_connections: dict[str, set[WebSocket]] = {}
+
+
+async def _broadcast(channel_id: str, data: dict, exclude: WebSocket | None = None) -> None:
+    """Send data to all connected WebSockets for channel_id, optionally excluding one."""
+    for ws in list(_connections.get(channel_id, set())):
+        if ws is not exclude:
+            try:
+                await ws.send_json(data)
+            except Exception:
+                pass
+
 
 # ── HTML page ────────────────────────────────────────────────────────────────
 
@@ -74,16 +87,30 @@ async def delete_channel(channel_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/api/channels/{channel_id}/messages")
-async def get_messages(channel_id: str, db: AsyncSession = Depends(get_db)):
+async def get_messages(
+    channel_id: str,
+    before: str | None = None,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(Channel).where(Channel.id == channel_id))
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Channel not found")
-    msgs = await db.execute(
-        select(Message).where(Message.channel_id == channel_id).order_by(Message.created_at)
-    )
+
+    query = select(Message).where(Message.channel_id == channel_id)
+
+    if before:
+        before_result = await db.execute(select(Message).where(Message.id == before))
+        before_msg = before_result.scalar_one_or_none()
+        if before_msg:
+            query = query.where(Message.created_at < before_msg.created_at)
+
+    query = query.order_by(Message.created_at.desc()).limit(limit)
+    msgs = await db.execute(query)
+    messages = list(reversed(msgs.scalars().all()))
     return [
         {"id": m.id, "role": m.role, "content": m.content, "created_at": m.created_at}
-        for m in msgs.scalars().all()
+        for m in messages
     ]
 
 
@@ -106,6 +133,9 @@ async def ws_chat(websocket: WebSocket, channel_id: str):
         await websocket.close(code=1008)
         return
 
+    # Register this connection for multi-device broadcast
+    _connections.setdefault(channel_id, set()).add(websocket)
+
     # Use a fresh DB session for the WS lifetime (via module ref so tests can patch it)
     async with _db_module.async_session_factory() as db:
         result = await db.execute(select(Channel).where(Channel.id == channel_id))
@@ -113,14 +143,23 @@ async def ws_chat(websocket: WebSocket, channel_id: str):
         if not channel:
             await websocket.send_json({"type": "error", "message": "Channel not found"})
             await websocket.close()
+            _connections.get(channel_id, set()).discard(websocket)
             return
 
-        # Send history
-        msgs = await db.execute(
-            select(Message).where(Message.channel_id == channel_id).order_by(Message.created_at)
+        # Send last 50 messages; tell client if older messages exist
+        msgs_result = await db.execute(
+            select(Message)
+            .where(Message.channel_id == channel_id)
+            .order_by(Message.created_at.desc())
+            .limit(51)
         )
-        for m in msgs.scalars().all():
+        all_recent = msgs_result.scalars().all()
+        has_more = len(all_recent) > 50
+        history = list(reversed(all_recent[:50]))
+        for m in history:
             await websocket.send_json({"type": "history", "role": m.role, "content": m.content, "id": m.id})
+        oldest_id = history[0].id if history else None
+        await websocket.send_json({"type": "history_done", "has_more": has_more, "oldest_id": oldest_id})
 
         try:
             while True:
@@ -129,38 +168,71 @@ async def ws_chat(websocket: WebSocket, channel_id: str):
                 if not user_text:
                     continue
 
-                # Persist user message
+                # Persist user message; send to originator and broadcast to other devices
                 user_msg = Message(channel_id=channel_id, role="user", content=user_text)
                 db.add(user_msg)
                 await db.commit()
                 await db.refresh(user_msg)
                 await websocket.send_json({"type": "user", "content": user_text, "id": user_msg.id})
+                await _broadcast(channel_id, {"type": "user", "content": user_text, "id": user_msg.id}, exclude=websocket)
 
-                # Stream opencode response
-                await websocket.send_json({"type": "assistant_start"})
+                # Stream opencode response — support cancellation
+                await _broadcast(channel_id, {"type": "assistant_start"})
                 response_parts: list[str] = []
-                try:
+                cancel_event = _asyncio.Event()
+                cancelled = False
+
+                async def _do_stream() -> None:
                     async for chunk, sid, _raw in stream_opencode(
                         user_text,
                         session_id=channel.opencode_session_id,
                         working_dir=channel.working_dir,
+                        cancel=cancel_event,
                     ):
                         if sid and channel.opencode_session_id != sid:
                             channel.opencode_session_id = sid
                             await db.commit()
                         if chunk:
                             response_parts.append(chunk)
-                            await websocket.send_json({"type": "chunk", "content": chunk})
+                            await _broadcast(channel_id, {"type": "chunk", "content": chunk})
+
+                stream_task = _asyncio.create_task(_do_stream())
+
+                # While streaming, listen for a cancel message from this client
+                while not stream_task.done():
+                    try:
+                        incoming = await _asyncio.wait_for(websocket.receive_json(), timeout=0.2)
+                        if incoming.get("type") == "cancel":
+                            cancel_event.set()
+                            cancelled = True
+                    except _asyncio.TimeoutError:
+                        pass
+                    except Exception:
+                        cancel_event.set()
+                        break
+
+                stream_error: str | None = None
+                try:
+                    await stream_task
                 except RuntimeError as e:
-                    await websocket.send_json({"type": "error", "message": str(e)})
-                    continue
+                    stream_error = str(e)
+                except _asyncio.CancelledError:
+                    pass
+
+                if stream_error:
+                    await _broadcast(channel_id, {"type": "error", "message": stream_error})
 
                 full_response = "".join(response_parts)
-                asst_msg = Message(channel_id=channel_id, role="assistant", content=full_response)
-                db.add(asst_msg)
-                await db.commit()
-                await db.refresh(asst_msg)
-                await websocket.send_json({"type": "assistant_end", "id": asst_msg.id})
+                if full_response:
+                    asst_msg = Message(channel_id=channel_id, role="assistant", content=full_response)
+                    db.add(asst_msg)
+                    await db.commit()
+                    await db.refresh(asst_msg)
+                    await _broadcast(channel_id, {"type": "assistant_end", "id": asst_msg.id, "cancelled": cancelled})
+                else:
+                    await _broadcast(channel_id, {"type": "assistant_end", "id": None, "cancelled": cancelled})
 
         except WebSocketDisconnect:
             pass
+        finally:
+            _connections.get(channel_id, set()).discard(websocket)

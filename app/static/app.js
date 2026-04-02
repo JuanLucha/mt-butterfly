@@ -49,6 +49,7 @@ if (document.getElementById("channel-list")) {
   const messagesEl    = document.getElementById("messages");
   const inputEl       = document.getElementById("msg-input");
   const sendBtn       = document.getElementById("send-btn");
+  const stopBtn       = document.getElementById("stop-btn");
   const chatHeader    = document.getElementById("chat-header-name");
   const statusDot     = document.getElementById("status-dot");
   const noChannel     = document.getElementById("no-channel");
@@ -56,6 +57,11 @@ if (document.getElementById("channel-list")) {
   const modal         = document.getElementById("channel-modal");
   const modalName     = document.getElementById("modal-channel-name");
   const modalDir      = document.getElementById("modal-working-dir");
+
+  // Scroll-back state
+  let hasMoreHistory  = false;
+  let oldestMsgId     = null;
+  let loadingHistory  = false;
 
   // Load channels on start
   async function loadChannels() {
@@ -93,6 +99,8 @@ if (document.getElementById("channel-list")) {
     if (ws) { ws.close(); ws = null; }
     intentionalClose = false;
     activeChannelId = id;
+    hasMoreHistory = false;
+    oldestMsgId = null;
     const ch = channels.find(c => c.id === id);
     chatHeader.textContent = "# " + ch.name;
     noChannel.style.display = "none";
@@ -142,11 +150,22 @@ if (document.getElementById("channel-list")) {
     statusDot.className = "ch-status" + (on ? " reconnecting" : "");
   }
 
+  let pendingUserMsg = null;
+
   function handleWsMessage(msg) {
     if (msg.type === "history") {
-      appendMessage(msg.role, msg.content);
+      prependMessage(msg.role, msg.content);
+    } else if (msg.type === "history_done") {
+      hasMoreHistory = msg.has_more;
+      oldestMsgId = msg.oldest_id || null;
     } else if (msg.type === "user") {
-      // already shown optimistically — skip duplicate
+      // If this echo matches the message we just sent, ignore (already shown optimistically).
+      // Otherwise it's from another device — show it.
+      if (msg.content === pendingUserMsg) {
+        pendingUserMsg = null;
+      } else {
+        appendMessage("user", msg.content);
+      }
     } else if (msg.type === "assistant_start") {
       streamingContent = "";
       streamingEl = appendMessage("assistant", "", true);
@@ -161,6 +180,12 @@ if (document.getElementById("channel-list")) {
       setWaiting(false);
       if (streamingEl) {
         streamingEl.classList.remove("streaming");
+        if (msg.cancelled) {
+          const badge = document.createElement("span");
+          badge.style.cssText = "font-size:0.7rem;color:#8b949e;margin-left:0.5rem;";
+          badge.textContent = "(stopped)";
+          streamingEl.querySelector(".role-label").appendChild(badge);
+        }
         streamingEl = null;
         streamingContent = "";
       }
@@ -170,15 +195,52 @@ if (document.getElementById("channel-list")) {
     }
   }
 
-  function appendMessage(role, content, streaming = false) {
+  async function loadOlderMessages() {
+    if (!hasMoreHistory || !oldestMsgId || loadingHistory || !activeChannelId) return;
+    loadingHistory = true;
+    const prevScrollHeight = messagesEl.scrollHeight;
+    try {
+      const res = await apiFetch(`/api/channels/${activeChannelId}/messages?before=${oldestMsgId}&limit=50`);
+      const older = await res.json();
+      if (older.length === 0) {
+        hasMoreHistory = false;
+        return;
+      }
+      // Prepend older messages (they arrive oldest-first)
+      for (let i = older.length - 1; i >= 0; i--) {
+        prependMessage(older[i].role, older[i].content);
+      }
+      oldestMsgId = older[0].id;
+      hasMoreHistory = older.length === 50;
+      // Keep scroll position stable after prepend
+      messagesEl.scrollTop = messagesEl.scrollHeight - prevScrollHeight;
+    } catch (e) {
+      console.error("Failed to load older messages", e);
+    } finally {
+      loadingHistory = false;
+    }
+  }
+
+  function _buildMessageEl(role, content, streaming = false) {
     const div = document.createElement("div");
     div.className = `msg ${role}` + (streaming ? " streaming" : "");
     div.innerHTML = `
       <div class="role-label">${role === "user" ? "You" : "OpenCode"}</div>
       <div class="msg-body">${renderMarkdown(content)}</div>
     `;
+    return div;
+  }
+
+  function appendMessage(role, content, streaming = false) {
+    const div = _buildMessageEl(role, content, streaming);
     messagesEl.appendChild(div);
     messagesEl.scrollTop = messagesEl.scrollHeight;
+    return div;
+  }
+
+  function prependMessage(role, content) {
+    const div = _buildMessageEl(role, content);
+    messagesEl.insertBefore(div, messagesEl.firstChild);
     return div;
   }
 
@@ -196,12 +258,21 @@ if (document.getElementById("channel-list")) {
     statusDot.className = "ch-status" + (ok ? " connected" : "");
     inputEl.disabled  = !ok || waiting;
     sendBtn.disabled  = !ok || waiting;
+    if (!ok) { stopBtn.style.display = "none"; sendBtn.style.display = ""; }
   }
 
   function setWaiting(on) {
     waiting = on;
-    sendBtn.disabled = on;
     inputEl.disabled = on;
+    if (on) {
+      sendBtn.style.display = "none";
+      stopBtn.style.display = "";
+      stopBtn.disabled = false;
+    } else {
+      stopBtn.style.display = "none";
+      sendBtn.style.display = "";
+      sendBtn.disabled = false;
+    }
     if (on && !typingEl) {
       typingEl = document.createElement("div");
       typingEl.className = "msg assistant";
@@ -218,10 +289,22 @@ if (document.getElementById("channel-list")) {
     const text = inputEl.value.trim();
     if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
     appendMessage("user", text);
+    pendingUserMsg = text;
     ws.send(JSON.stringify({ message: text }));
     inputEl.value = "";
     inputEl.style.height = "42px";
   }
+
+  stopBtn.addEventListener("click", () => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    stopBtn.disabled = true;
+    ws.send(JSON.stringify({ type: "cancel" }));
+  });
+
+  // Scroll to top → load older messages
+  messagesEl.addEventListener("scroll", () => {
+    if (messagesEl.scrollTop === 0 && hasMoreHistory) loadOlderMessages();
+  });
 
   sendBtn.addEventListener("click", sendMessage);
   inputEl.addEventListener("keydown", e => {

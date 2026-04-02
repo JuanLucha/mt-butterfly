@@ -12,6 +12,7 @@ async def stream_opencode(
     message: str,
     session_id: str | None = None,
     working_dir: str | None = None,
+    cancel: asyncio.Event | None = None,
 ) -> AsyncIterator[tuple[str, str | None, str | None]]:
     """
     Yields (chunk_text, session_id_or_None, raw_json_line_or_None).
@@ -44,6 +45,10 @@ async def stream_opencode(
     discovered_session_id: str | None = None
 
     async for raw_line in proc.stdout:
+        if cancel and cancel.is_set():
+            proc.kill()
+            await proc.wait()
+            return
         line = raw_line.decode().strip()
         logger.info(f"Received line: {line[:500] if line else 'EMPTY'}")
         if not line:

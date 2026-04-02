@@ -137,6 +137,13 @@ nav a:hover, nav a.active { background: var(--bg3); color: var(--text); }
 }
 .btn-send:hover { background: var(--accent); }
 .btn-send:disabled { opacity: 0.4; cursor: default; }
+.btn-stop {
+  background: #6e3030; border: none; border-radius: 8px;
+  color: #fff; cursor: pointer; padding: 0 1rem; font-size: 1rem;
+  transition: background 0.15s; align-self: flex-end; height: 42px;
+}
+.btn-stop:hover { background: #9b3535; }
+.btn-stop:disabled { opacity: 0.4; cursor: default; }
 
 /* ── NO CHANNEL ── */
 .no-channel {
