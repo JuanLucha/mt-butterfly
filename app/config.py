@@ -1,10 +1,11 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
 import os
+from platformdirs import user_data_dir
 
 
 def _get_app_support_dir() -> Path:
-    return Path.home() / "Library" / "Application Support" / "mt-butterfly"
+    return Path(user_data_dir("mt-butterfly", appauthor=False))
 
 
 def _get_env_files() -> list[Path | str]:
