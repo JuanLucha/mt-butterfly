@@ -16,7 +16,7 @@
 const TOKEN = sessionStorage.getItem("mt_token") || "";
 
 function navigate(path) {
-  window.location.href = path;
+  window.location.href = TOKEN ? path + "?t=" + encodeURIComponent(TOKEN) : path;
 }
 
 async function apiFetch(path, options = {}) {
