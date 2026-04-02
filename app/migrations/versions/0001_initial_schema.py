@@ -44,7 +44,6 @@ def upgrade() -> None:
         sa.Column("working_dir", sa.String(512), nullable=False),
         sa.Column("email_to", sa.String(512), nullable=True),
         sa.Column("enabled", sa.Boolean(), nullable=False),
-        sa.Column("timeout_minutes", sa.Integer(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
     )
     op.create_table(
