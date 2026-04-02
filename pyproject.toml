@@ -25,6 +25,7 @@ dependencies = [
     "greenlet>=3.1.1",
     "youtube-transcript-api>=0.6.0",
     "platformdirs>=4.0.0",
+    "alembic>=1.13.0",
 ]
 
 [project.optional-dependencies]
@@ -43,4 +44,4 @@ where = ["."]
 include = ["app*"]
 
 [tool.setuptools.package-data]
-app = ["templates/**/*", "static/**/*", "skills/**/*"]
+app = ["templates/**/*", "static/**/*", "skills/**/*", "migrations/**/*"]
