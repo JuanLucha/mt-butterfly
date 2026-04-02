@@ -23,7 +23,8 @@ def _send_sync(to: list[str], subject: str, body: str, html: bool = False) -> No
     else:
         msg.attach(MIMEText(body, "plain"))
 
-    context = ssl.create_default_context()
+    import certifi
+    context = ssl.create_default_context(cafile=certifi.where())
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
         server.login(settings.gmail_user, settings.gmail_app_password)
         server.send_message(msg)
