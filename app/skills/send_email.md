@@ -12,13 +12,14 @@ mt-butterfly-gmail --to <address> --subject "<subject>" --body-file <path.html> 
 
 Use `--html` when the body is an HTML file so it renders correctly in email clients.
 
-## Requirements
+## IMPORTANT: Credentials are automatic
 
-- mt-butterfly must be configured with Gmail credentials (`GMAIL_USER` and `GMAIL_APP_PASSWORD`).
-  If the app is running or has been set up, the credentials are already available — no additional
-  configuration is needed to use this tool.
-- `GMAIL_APP_PASSWORD` is a Google App Password (not the account password). If credentials are
-  missing, generate one at: https://myaccount.google.com/apppasswords and configure mt-butterfly.
+Gmail credentials (`GMAIL_USER` and `GMAIL_APP_PASSWORD`) are **already configured in the environment**. Do NOT:
+- Set environment variables manually (e.g. `export GMAIL_USER=...`)
+- Read, search for, or print credentials from `.env` files or `printenv`
+- Pass credentials as command arguments
+
+Just call `mt-butterfly-gmail` directly — it will pick up the credentials automatically.
 
 ## Examples
 
