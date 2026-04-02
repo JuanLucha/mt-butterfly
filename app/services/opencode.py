@@ -40,6 +40,7 @@ async def stream_opencode(
         stderr=asyncio.subprocess.PIPE,
         cwd=working_dir,
         env=proc_env,
+        limit=10 * 1024 * 1024,  # 10 MB — opencode lines can be very long
     )
 
     discovered_session_id: str | None = None
