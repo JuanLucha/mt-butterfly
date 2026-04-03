@@ -245,6 +245,7 @@ if (document.getElementById("channel-list")) {
     ws.send(JSON.stringify({ message: text }));
     inputEl.value = "";
     inputEl.style.height = "42px";
+    inputEl.focus();
   }
 
   stopBtn.addEventListener("click", () => {
