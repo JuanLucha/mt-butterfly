@@ -62,7 +62,7 @@ if (document.getElementById("channel-list")) {
     chatHeader.textContent = "# " + ch.name;
     noChannel.style.display = "none";
     chatArea.style.display  = "flex";
-    messagesEl.innerHTML = "";
+    messagesEl.innerHTML = '<div class="messages-spacer"></div>';
     setConnected(false);
     renderChannelList();
     connectWS(id);
@@ -114,6 +114,7 @@ if (document.getElementById("channel-list")) {
     } else if (msg.type === "history_done") {
       hasMoreHistory = msg.has_more;
       oldestMsgId = msg.oldest_id || null;
+      messagesEl.scrollTop = messagesEl.scrollHeight;
     } else if (msg.type === "user") {
       if (msg.content === pendingUserMsg) {
         pendingUserMsg = null;
@@ -183,6 +184,8 @@ if (document.getElementById("channel-list")) {
     return div;
   }
 
+  function messagesSpacer() { return messagesEl.querySelector(".messages-spacer"); }
+
   function appendMessage(role, content, streaming = false) {
     const div = _buildMessageEl(role, content, streaming);
     messagesEl.appendChild(div);
@@ -192,7 +195,7 @@ if (document.getElementById("channel-list")) {
 
   function prependMessage(role, content) {
     const div = _buildMessageEl(role, content);
-    messagesEl.insertBefore(div, messagesEl.firstChild);
+    messagesEl.insertBefore(div, messagesSpacer().nextSibling);
     return div;
   }
 
