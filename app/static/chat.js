@@ -62,7 +62,7 @@ if (document.getElementById("channel-list")) {
     chatHeader.textContent = "# " + ch.name;
     noChannel.style.display = "none";
     chatArea.style.display  = "flex";
-    messagesEl.innerHTML = '<div class="messages-spacer"></div>';
+    messagesEl.innerHTML = "";
     setConnected(false);
     renderChannelList();
     connectWS(id);
@@ -114,7 +114,6 @@ if (document.getElementById("channel-list")) {
     } else if (msg.type === "history_done") {
       hasMoreHistory = msg.has_more;
       oldestMsgId = msg.oldest_id || null;
-      messagesEl.scrollTop = messagesEl.scrollHeight;
     } else if (msg.type === "user") {
       if (msg.content === pendingUserMsg) {
         pendingUserMsg = null;
@@ -129,7 +128,7 @@ if (document.getElementById("channel-list")) {
       streamingContent += msg.content;
       if (streamingEl) {
         streamingEl.querySelector(".msg-body").innerHTML = renderMarkdown(streamingContent);
-        messagesEl.scrollTop = messagesEl.scrollHeight;
+        messagesEl.scrollTop = 0;
       }
     } else if (msg.type === "assistant_end") {
       setWaiting(false);
@@ -153,7 +152,6 @@ if (document.getElementById("channel-list")) {
   async function loadOlderMessages() {
     if (!hasMoreHistory || !oldestMsgId || loadingHistory || !activeChannelId) return;
     loadingHistory = true;
-    const prevScrollHeight = messagesEl.scrollHeight;
     try {
       const res = await apiFetch(`/api/channels/${activeChannelId}/messages?before=${oldestMsgId}&limit=50`);
       const older = await res.json();
@@ -166,7 +164,7 @@ if (document.getElementById("channel-list")) {
       }
       oldestMsgId = older[0].id;
       hasMoreHistory = older.length === 50;
-      messagesEl.scrollTop = messagesEl.scrollHeight - prevScrollHeight;
+      // browser maintains scroll position automatically with column-reverse
     } catch (e) {
       console.error("Failed to load older messages", e);
     } finally {
@@ -184,18 +182,15 @@ if (document.getElementById("channel-list")) {
     return div;
   }
 
-  function messagesSpacer() { return messagesEl.querySelector(".messages-spacer"); }
-
   function appendMessage(role, content, streaming = false) {
     const div = _buildMessageEl(role, content, streaming);
-    messagesEl.appendChild(div);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+    messagesEl.prepend(div);
     return div;
   }
 
   function prependMessage(role, content) {
     const div = _buildMessageEl(role, content);
-    messagesEl.insertBefore(div, messagesSpacer().nextSibling);
+    messagesEl.appendChild(div);
     return div;
   }
 
@@ -233,8 +228,7 @@ if (document.getElementById("channel-list")) {
       typingEl = document.createElement("div");
       typingEl.className = "msg assistant";
       typingEl.innerHTML = '<div class="role-label">OpenCode</div><div class="typing-indicator"><span></span><span></span><span></span></div>';
-      messagesEl.appendChild(typingEl);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
+      messagesEl.prepend(typingEl);
     } else if (!on && typingEl) {
       typingEl.remove();
       typingEl = null;
@@ -258,7 +252,8 @@ if (document.getElementById("channel-list")) {
   });
 
   messagesEl.addEventListener("scroll", () => {
-    if (messagesEl.scrollTop === 0 && hasMoreHistory) loadOlderMessages();
+    const atTop = messagesEl.scrollTop + messagesEl.clientHeight >= messagesEl.scrollHeight - 10;
+    if (atTop && hasMoreHistory) loadOlderMessages();
   });
 
   sendBtn.addEventListener("click", sendMessage);
