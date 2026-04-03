@@ -224,6 +224,7 @@ if (document.getElementById("channel-list")) {
       stopBtn.style.display = "none";
       sendBtn.style.display = "";
       sendBtn.disabled = false;
+      inputEl.focus();
     }
     if (on && !typingEl) {
       typingEl = document.createElement("div");
@@ -245,7 +246,6 @@ if (document.getElementById("channel-list")) {
     ws.send(JSON.stringify({ message: text }));
     inputEl.value = "";
     inputEl.style.height = "42px";
-    inputEl.focus();
   }
 
   stopBtn.addEventListener("click", () => {
