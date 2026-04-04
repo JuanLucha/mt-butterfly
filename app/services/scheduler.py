@@ -19,6 +19,7 @@ def _load_skills() -> str:
         parts.append(skill_file.read_text())
     return "\n\n---\n\n".join(parts)
 
+
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
 
@@ -40,11 +41,18 @@ def _job_id(task_id: str) -> str:
 def _check_output_for_violations(raw_lines: list[str]) -> bool:
     """
     2.1 — Scan JSONL output for signs the LLM ignored the CLI tools:
-    - bash commands that write .py files
     - pip install calls
+    - using smtplib or requests directly
+    - writing/creating .py files
     Returns True if suspicious activity was found.
     """
-    suspicious_patterns = [".py", "pip install", "smtplib", "import requests"]
+    suspicious_patterns = [
+        "pip install",
+        "smtplib",
+        "import requests",
+        "import smtplib",
+        "_io.open",  # writing .py files directly
+    ]
     for line in raw_lines:
         try:
             event = json.loads(line)
@@ -67,7 +75,9 @@ def _check_output_for_violations(raw_lines: list[str]) -> bool:
         text_to_check = f"{command} {output}"
         for pattern in suspicious_patterns:
             if pattern in text_to_check:
-                logger.warning(f"Violation detected in task output: pattern '{pattern}' found")
+                logger.warning(
+                    f"Violation detected in task output: pattern '{pattern}' found"
+                )
                 return True
     return False
 
@@ -106,9 +116,9 @@ async def _run_task(task_id: str) -> None:
             try:
                 email_instruction = (
                     f"Default recipient for this task: {task.email_to}\n"
-                    f"  mt-butterfly-gmail --to {task.email_to} --subject \"<subject>\" --body-file <path>\n"
-                    if task.email_to else
-                    "(no recipient configured for this task — skip email)\n"
+                    f'  mt-butterfly-gmail --to {task.email_to} --subject "<subject>" --body-file <path>\n'
+                    if task.email_to
+                    else "(no recipient configured for this task — skip email)\n"
                 )
                 skills_docs = _load_skills()
                 constrained_prompt = (
@@ -155,14 +165,18 @@ async def _run_task(task_id: str) -> None:
                 # 2.1 — post-execution verification
                 if _check_output_for_violations(raw_lines):
                     run.status = "needs_review"
-                    logger.warning(f"Task {task_id} completed but needs review (LLM may have bypassed CLI tools)")
+                    logger.warning(
+                        f"Task {task_id} completed but needs review (LLM may have bypassed CLI tools)"
+                    )
                 else:
                     run.status = "success"
 
                 logger.info(f"Opencode raw lines: {len(raw_lines)}")
 
             except asyncio.TimeoutError:
-                logger.error(f"Task {task_id} timed out after {task.timeout_minutes} minutes")
+                logger.error(
+                    f"Task {task_id} timed out after {task.timeout_minutes} minutes"
+                )
                 output = f"Task timed out after {task.timeout_minutes} minutes"
                 run.status = "timeout"
             except Exception as e:
@@ -183,13 +197,13 @@ async def _cleanup_old_runs() -> None:
 
     cutoff = datetime.now(UTC) - timedelta(days=settings.task_run_retention_days)
     async with async_session_factory() as db:
-        result = await db.execute(
-            delete(TaskRun).where(TaskRun.started_at < cutoff)
-        )
+        result = await db.execute(delete(TaskRun).where(TaskRun.started_at < cutoff))
         await db.commit()
         deleted = result.rowcount
         if deleted:
-            logger.info(f"Retention cleanup: deleted {deleted} TaskRun(s) older than {settings.task_run_retention_days} days")
+            logger.info(
+                f"Retention cleanup: deleted {deleted} TaskRun(s) older than {settings.task_run_retention_days} days"
+            )
 
 
 def schedule_task(task) -> None:
