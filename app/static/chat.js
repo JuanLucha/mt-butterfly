@@ -114,6 +114,7 @@ if (document.getElementById("channel-list")) {
     } else if (msg.type === "history_done") {
       hasMoreHistory = msg.has_more;
       oldestMsgId = msg.oldest_id || null;
+      scrollToBottom();
     } else if (msg.type === "user") {
       if (msg.content === pendingUserMsg) {
         pendingUserMsg = null;
@@ -128,7 +129,7 @@ if (document.getElementById("channel-list")) {
       streamingContent += msg.content;
       if (streamingEl) {
         streamingEl.querySelector(".msg-body").innerHTML = renderMarkdown(streamingContent);
-        messagesEl.scrollTop = 0;
+        scrollToBottom();
       }
     } else if (msg.type === "assistant_end") {
       setWaiting(false);
@@ -152,6 +153,7 @@ if (document.getElementById("channel-list")) {
   async function loadOlderMessages() {
     if (!hasMoreHistory || !oldestMsgId || loadingHistory || !activeChannelId) return;
     loadingHistory = true;
+    const prevScrollHeight = messagesEl.scrollHeight;
     try {
       const res = await apiFetch(`/api/channels/${activeChannelId}/messages?before=${oldestMsgId}&limit=50`);
       const older = await res.json();
@@ -164,7 +166,7 @@ if (document.getElementById("channel-list")) {
       }
       oldestMsgId = older[0].id;
       hasMoreHistory = older.length === 50;
-      // browser maintains scroll position automatically with column-reverse
+      messagesEl.scrollTop = messagesEl.scrollHeight - prevScrollHeight;
     } catch (e) {
       console.error("Failed to load older messages", e);
     } finally {
@@ -182,15 +184,20 @@ if (document.getElementById("channel-list")) {
     return div;
   }
 
+  function scrollToBottom() {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
   function appendMessage(role, content, streaming = false) {
     const div = _buildMessageEl(role, content, streaming);
-    messagesEl.prepend(div);
+    messagesEl.appendChild(div);
+    scrollToBottom();
     return div;
   }
 
   function prependMessage(role, content) {
     const div = _buildMessageEl(role, content);
-    messagesEl.appendChild(div);
+    messagesEl.insertBefore(div, messagesEl.firstChild);
     return div;
   }
 
@@ -228,7 +235,8 @@ if (document.getElementById("channel-list")) {
       typingEl = document.createElement("div");
       typingEl.className = "msg assistant";
       typingEl.innerHTML = '<div class="role-label">OpenCode</div><div class="typing-indicator"><span></span><span></span><span></span></div>';
-      messagesEl.prepend(typingEl);
+      messagesEl.appendChild(typingEl);
+      scrollToBottom();
     } else if (!on && typingEl) {
       typingEl.remove();
       typingEl = null;
@@ -252,8 +260,7 @@ if (document.getElementById("channel-list")) {
   });
 
   messagesEl.addEventListener("scroll", () => {
-    const atTop = messagesEl.scrollTop + messagesEl.clientHeight >= messagesEl.scrollHeight - 10;
-    if (atTop && hasMoreHistory) loadOlderMessages();
+    if (messagesEl.scrollTop === 0 && hasMoreHistory) loadOlderMessages();
   });
 
   sendBtn.addEventListener("click", sendMessage);
