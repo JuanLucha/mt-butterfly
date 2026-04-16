@@ -93,6 +93,7 @@ window.editTask = (taskId) => {
   document.getElementById("task-minute").value = t.minute;
   document.getElementById("task-email").value = t.email_to || "";
   document.getElementById("task-enabled").checked = t.enabled;
+  document.getElementById("task-working-dir").value = t.working_dir || "";
   const activeDays = (t.days_of_week || "").split(",");
   document.querySelectorAll(".day-cb").forEach(cb => cb.checked = activeDays.includes(cb.value));
   document.getElementById("task-modal").classList.add("open");
@@ -109,6 +110,7 @@ window.saveTask = async () => {
     days_of_week: days || "mon",
     email_to:     document.getElementById("task-email").value.trim() || null,
     enabled:      document.getElementById("task-enabled").checked,
+    working_dir:  document.getElementById("task-working-dir").value.trim() || null,
   };
   if (!body.name || !body.prompt) { alert("Name and prompt are required."); return; }
   const method = id ? "PUT" : "POST";

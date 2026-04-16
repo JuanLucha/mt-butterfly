@@ -20,12 +20,14 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templa
 
 # ── HTML page ─────────────────────────────────────────────────────────────────
 
+
 @router.get("/tasks", response_class=HTMLResponse)
 async def tasks_page(request: Request):
     return templates.TemplateResponse(request, "tasks.html")
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
+
 
 class TaskCreate(BaseModel):
     name: str
@@ -36,6 +38,7 @@ class TaskCreate(BaseModel):
     email_to: str | None = None
     enabled: bool = True
     timeout_minutes: int = 30
+    working_dir: str | None = None
 
     @field_validator("hour")
     @classmethod
@@ -57,6 +60,7 @@ class TaskUpdate(TaskCreate):
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 async def _task_with_last_run(task: Task, db: AsyncSession) -> dict:
     result = await db.execute(
@@ -83,7 +87,9 @@ async def _task_with_last_run(task: Task, db: AsyncSession) -> dict:
             "started_at": last.started_at,
             "completed_at": last.completed_at,
             "status": last.status,
-        } if last else None,
+        }
+        if last
+        else None,
     }
 
 
@@ -92,6 +98,7 @@ def _ensure_workspace(task: Task) -> None:
     from app.config import settings
     import json
     import re
+
     if not settings.workspaces_dir:
         raise ValueError("WORKSPACES_DIR not configured")
     slug = re.sub(r"[^\w-]", "-", task.name.lower()).strip("-") or task.id
@@ -102,22 +109,28 @@ def _ensure_workspace(task: Task) -> None:
     # Allow opencode to operate without interactive permission prompts.
     # Always write the config so stale permission settings get corrected.
     opencode_cfg = workspace / "opencode.json"
-    opencode_cfg.write_text(json.dumps({
-        "$schema": "https://opencode.ai/config.json",
-        "permission": {
-            "read": "allow",
-            "edit": "allow",
-            "glob": "allow",
-            "grep": "allow",
-            "list": "allow",
-            "bash": "allow",
-        },
-    }, indent=2))
+    opencode_cfg.write_text(
+        json.dumps(
+            {
+                "$schema": "https://opencode.ai/config.json",
+                "permission": {
+                    "read": "allow",
+                    "edit": "allow",
+                    "glob": "allow",
+                    "grep": "allow",
+                    "list": "allow",
+                    "bash": "allow",
+                },
+            },
+            indent=2,
+        )
+    )
 
     # Credentials are passed as subprocess env vars at runtime — not written to disk.
 
 
 # ── REST ──────────────────────────────────────────────────────────────────────
+
 
 @router.get("/api/tasks")
 async def list_tasks(db: AsyncSession = Depends(get_db)):
@@ -139,7 +152,9 @@ async def create_task(body: TaskCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.put("/api/tasks/{task_id}")
-async def update_task(task_id: str, body: TaskUpdate, db: AsyncSession = Depends(get_db)):
+async def update_task(
+    task_id: str, body: TaskUpdate, db: AsyncSession = Depends(get_db)
+):
     result = await db.execute(select(Task).where(Task.id == task_id))
     task = result.scalar_one_or_none()
     if not task:
@@ -167,13 +182,16 @@ async def delete_task(task_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/api/tasks/{task_id}/run", status_code=202)
-async def run_task_now(task_id: str, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+async def run_task_now(
+    task_id: str, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)
+):
     result = await db.execute(select(Task).where(Task.id == task_id))
     task = result.scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
     from app.services.scheduler import _run_task
+
     background_tasks.add_task(_run_task, task_id)
     return {"status": "triggered"}
 
@@ -184,7 +202,7 @@ async def list_task_runs(task_id: str, db: AsyncSession = Depends(get_db)):
     task = result.scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     result = await db.execute(
         select(TaskRun)
         .where(TaskRun.task_id == task_id)
