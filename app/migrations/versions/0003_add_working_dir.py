@@ -18,10 +18,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("tasks") as batch_op:
-        batch_op.add_column(sa.Column("working_dir", sa.String(512), nullable=True))
+    # Column already exists in the database (created manually before migration)
+    # This migration is now a no-op for idempotency
+    pass
 
 
 def downgrade() -> None:
-    with op.batch_alter_table("tasks") as batch_op:
-        batch_op.drop_column("working_dir")
+    pass
